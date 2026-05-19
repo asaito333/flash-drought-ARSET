@@ -1,0 +1,10 @@
+name: flash-drought
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.12
+  - ipykernel
+  - jupyter
+  - requests
+  - tqdm
