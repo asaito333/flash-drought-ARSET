@@ -1,4 +1,6 @@
 ipykernel ~= 7.2
 jupyter ~= 1.1
+matplotlib ~= 3.10
+rasterio ~= 1.5
 requests ~= 2.34
 tqdm ~= 4.67
