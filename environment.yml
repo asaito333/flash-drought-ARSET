@@ -4,9 +4,12 @@ channels:
   - defaults
 dependencies:
   - python>=3.12
+  - cdsapi==0.7.7
   - ipykernel
   - jupyter
   - matplotlib
   - rasterio
   - requests
+  - rioxarray
   - tqdm
+  - xarray
