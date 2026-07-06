@@ -2,6 +2,8 @@ import warnings
 from collections.abc import Sequence
 
 import earthaccess
+import fsspec
+import virtualizarr  # noqa: F401  (registers the .vz dataset accessor)
 import xarray as xr
 from pyproj import Transformer
 
@@ -22,11 +24,11 @@ def collapse_time_to_scalar(ds: xr.Dataset) -> xr.Dataset:
     Squeezing the length-1 dimension turns time into a scalar coordinate,
     which expand_dims is able to promote into a time dimension.
 
-    Parameters:
-        ds: A single (virtual) granule dataset.
+    Arguments:
+        ds (xr.Dataset): A single (virtual) granule dataset.
 
     Returns:
-        The dataset with time collapsed to a scalar coordinate.
+        xr.Dataset: The dataset with time collapsed to a scalar coordinate.
     """
     if "time" in ds.variables:
         squeeze_dims = [d for d in ds["time"].dims if ds.sizes[d] == 1]
@@ -40,6 +42,7 @@ def virtualize_smap_l4(
     temporal: tuple[str, str],
     group: str = "Geophysical_Data",
     variables: Sequence[str] | None = ("sm_rootzone",),
+    load: bool = False,
 ) -> xr.Dataset:
     """Build a virtual dataset of SMAP L4 geophysical variables over a time range.
 
@@ -51,15 +54,22 @@ def virtualize_smap_l4(
     geophysical group are opened separately and the root coordinates are then
     attached to the stacked geophysical variables.
 
-    Parameters:
-        temporal: (start, end) date strings passed to earthaccess.
-        group: The subgroup holding the geophysical variables.
-        variables: Variables to keep from group.  None keeps the whole
+    Arguments:
+        temporal (tuple[str, str]): (start, end) date strings passed to earthaccess.
+        group (str): The subgroup holding the geophysical variables.
+        variables (Sequence[str], optional): Variables to keep from group.  None keeps the whole
             group; the default keeps only sm_rootzone.
+        load (bool, optional): When False (default) the geophysical variables stay as
+            VirtualiZarr ManifestArrays (byte-range references), which is
+            what :func:`save_virtual_zarr` needs to write a compact kerchunk
+            file.  When True they are materialised into a concrete,
+            lazily-loaded dataset that can be computed on directly (e.g. by
+            :func:`sm_rootzone_timeseries`) without a kerchunk round-trip.
 
     Returns:
-        A virtual xarray.Dataset with the requested variables stacked along
-        a time dimension and carrying the time/x/y coordinates.
+        A virtual xarray.Dataset (or a concrete one when load=True) with
+        the requested variables stacked along a time dimension and carrying
+        the time/x/y coordinates.
     """
     auth = earthaccess.login()
     if not auth.authenticated:
@@ -73,7 +83,6 @@ def virtualize_smap_l4(
 
     open_options = {
         "access": "indirect",
-        "load": True,
         "concat_dim": "time",
         "coords": "minimal",
         "compat": "override",
@@ -85,8 +94,11 @@ def virtualize_smap_l4(
         message="This DMRpp contains the variable EASE2_global_projection*",
         category=UserWarning
     )
+    # The root group is always loaded so that time/x/y come back as concrete
+    # coordinates; these are tiny and get inlined into the kerchunk file.
     result_root = earthaccess.virtualize(
         granules=results,
+        load=True,
         data_vars="minimal",
         preprocess=collapse_time_to_scalar,
         loadable_variables=["time", "x", "y"],
@@ -95,6 +107,7 @@ def virtualize_smap_l4(
 
     result_gph = earthaccess.virtualize(
         granules=results,
+        load=load,
         group=group,
         data_vars="all",
         **open_options, # type: ignore
@@ -112,6 +125,69 @@ def virtualize_smap_l4(
     return result
 
 
+def save_virtual_zarr(ds: xr.Dataset, filepath: str) -> str:
+    """Persist a virtual dataset as a kerchunk virtual Zarr reference file.
+
+    The dataset returned by :func:`virtualize_smap_l4` does not hold any
+    array data itself; it holds references (byte-range offsets into the
+    remote SMAP L4 granules) produced by VirtualiZarr.  Serializing those
+    references to a single kerchunk JSON file lets the whole time stack be
+    reopened later as one Zarr store without re-running the search and
+    virtualization step, while the actual chunks are still streamed from the
+    original granules on demand.
+
+    Arguments:
+        ds (xr.Dataset): A virtual dataset from :func:`virtualize_smap_l4`.
+        filepath (str): Destination path for the kerchunk references.  Use a
+            .json suffix for the JSON format.
+
+    Returns:
+        str: The path the references were written to.
+    """
+    ds.vz.to_kerchunk(filepath, format="json")
+    return filepath
+
+
+def open_virtual_zarr(filepath: str) -> xr.Dataset:
+    """Open a kerchunk virtual Zarr file written by :func:`save_virtual_zarr`.
+
+    The references point at the original SMAP L4 granules on NASA Earthdata,
+    which are served over authenticated HTTPS, so an Earthdata bearer token
+    is attached to every remote request.  fsspec's "reference" filesystem
+    maps the kerchunk references onto that remote store, and xarray reads it
+    back through the Zarr engine.  Only the chunks that are actually accessed
+    are fetched, so opening the store is cheap.
+
+    Arguments:
+        filepath: Path to a kerchunk JSON reference file.
+
+    Returns:
+        The lazily-backed xarray.Dataset described by the references.
+    """
+    auth = earthaccess.login()
+    if not auth.authenticated:
+        auth.login(strategy="interactive", persist=True)
+    token = auth.token["access_token"]  # type: ignore[index]
+
+    # zarr v3's fsspec store requires the reference filesystem and the remote
+    # HTTPS filesystem it wraps to share the same asynchronous setting.
+    fs = fsspec.filesystem(
+        "reference",
+        fo=filepath,
+        remote_protocol="https",
+        remote_options={
+            "headers": {"Authorization": f"Bearer {token}"},
+            "asynchronous": True,
+        },
+        asynchronous=True,
+    )
+    return xr.open_dataset(
+        fs.get_mapper(""),
+        engine="zarr",
+        consolidated=False,
+    )
+
+
 def latlon_bbox_to_ease(
     bbox: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float]:
@@ -124,7 +200,7 @@ def latlon_bbox_to_ease(
     y only on latitude; transforming the four corners and taking the
     min/max therefore yields exact axis-aligned bounds.
 
-    Parameters:
+    Arguments:
         bbox: (west, south, east, north) in degrees (lon/lat, EPSG:4326).
 
     Returns:
@@ -156,15 +232,15 @@ def sm_rootzone_timeseries(
 ) -> xr.DataArray:
     """Spatially average a variable over a lat/lon box and aggregate in time.
 
-    Parameters:
-        ds: The dataset returned by :func:`virtualize_smap_l4`.
+    Arguments:
+        ds (xr.Dataset): The dataset returned by :func:`virtualize_smap_l4`.
         bbox: (west, south, east, north) in degrees (lon/lat).
-        freq: Pandas offset alias for the temporal aggregation window
+        freq (str): Pandas offset alias for the temporal aggregation window
             ("3D" = 3-day means).
-        variable: The variable to aggregate.
+        variable (str): The variable to aggregate.
 
     Returns:
-        A 1-D DataArray of the box-averaged, freq-aggregated variable
+        xr.DataArray: A 1-D DataArray of the box-averaged, freq-aggregated variable
         indexed by time.
 
     Raises:
@@ -187,6 +263,14 @@ def sm_rootzone_timeseries(
 
 if __name__ == "__main__":
     ds = virtualize_smap_l4(("2026-06-01", "2026-06-15"))
+
+    # Persist the virtual dataset as a kerchunk virtual Zarr reference file.
+    zarr_path = save_virtual_zarr(ds, "smap_l4_virtual.json")
+    print(f"Saved virtual Zarr references to {zarr_path}")
+
+    # Reopen straight from the references -- no re-search or re-virtualize.
+    ds = open_virtual_zarr(zarr_path)
+    print(ds)
 
     # Same bounding box as notebook (west, south, east, north):
     bbox = (-111.0, 45.0, -106.0, 50.0)
