@@ -6,6 +6,7 @@ dependencies:
   - python>=3.12
   - cdsapi==0.7.7
   - earthaccess
+  - h5netcdf
   - ipykernel
   - jupyter
   - matplotlib

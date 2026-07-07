@@ -1,5 +1,7 @@
+import os
 import warnings
 from collections.abc import Sequence
+from typing import TypeVar
 
 import earthaccess
 import fsspec
@@ -9,6 +11,21 @@ from pyproj import Transformer
 
 # EASE-Grid 2.0 Global (9 km) projection used by SMAP L4 x/y coordinates (meters).
 EASE2_GLOBAL_EPSG = "EPSG:6933"
+
+# SPL4SMLM land-model constants used to turn soil moisture into an SWDI.  These
+# live on the same 9 km EASE-Grid 2.0 cells as the SPL4SMGP soil moisture, so
+# their (y, x) arrays align 1:1 with sm_rootzone.
+LMC_GROUP = "Land-Model-Constants_Data"
+FIELD_CAPACITY_VAR = "clsm_cdcr2"  # column water capacity (kg m-2)
+PROFILE_DEPTH_VAR = "clsm_dzpr"  # soil profile thickness (m)
+WILTING_POINT_VAR = "clsm_wp"  # wilting point (m3 m-3)
+
+# Density of liquid water (kg m-3), used to convert clsm_cdcr2's column water
+# capacity (kg m-2) into a volumetric field capacity (m3 m-3).
+WATER_DENSITY = 1000.0
+
+# Preserves whether _select_bbox was handed a Dataset or a DataArray.
+XarrayObj = TypeVar("XarrayObj", xr.Dataset, xr.DataArray)
 
 
 def collapse_time_to_scalar(ds: xr.Dataset) -> xr.Dataset:
@@ -188,6 +205,47 @@ def open_virtual_zarr(filepath: str) -> xr.Dataset:
     )
 
 
+def download_model_constants(
+    output_dir: str = "data/smap_model_constants",
+) -> str:
+    """Download the single SPL4SMLM land-model-constants granule.
+
+    The SWDI needs the field capacity and wilting point, which are not carried
+    in the SPL4SMGP soil moisture granules; they are static constants of the
+    Catchment land surface model shared by the whole SMAP L4 record.  The
+    SPL4SMLM collection therefore contains exactly one granule, which this
+    downloads (skipping the transfer if it is already present locally).
+
+    Arguments:
+        output_dir (str): Directory to store the granule in.  Created if absent.
+
+    Returns:
+        str: Path to the downloaded HDF-5 constants file.
+
+    Raises:
+        FileNotFoundError: If no HDF-5 granule was returned by the download.
+    """
+    expected_path = "data/smap_model_constants/SMAP_L4_SM_lmc_00000000T000000_Vv8011_001.h5"
+    if os.path.exists(expected_path):
+        return expected_path
+
+    auth = earthaccess.login()
+    if not auth.authenticated:
+        auth.login(strategy="interactive", persist=True)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    warnings.filterwarnings("ignore", "As of version 1.0*", FutureWarning)
+    results = earthaccess.search_data(short_name="SPL4SMLM")
+    downloaded = earthaccess.download(results, local_path=output_dir)
+
+    h5_files = [str(p) for p in downloaded if str(p).endswith(".h5")]
+    if not h5_files:
+        msg = f"No SPL4SMLM HDF-5 granule was downloaded to {output_dir}."
+        raise FileNotFoundError(msg)
+    return h5_files[0]
+
+
 def latlon_bbox_to_ease(
     bbox: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float]:
@@ -224,6 +282,30 @@ def _bounds_slice(coord: xr.DataArray, lo: float, hi: float) -> slice:
     return slice(lo, hi)
 
 
+def _select_bbox(
+    obj: XarrayObj,
+    bbox: tuple[float, float, float, float],
+) -> XarrayObj:
+    """Select the x/y cells of a SMAP L4 grid falling inside a lat/lon box.
+
+    Both the soil moisture and the land-model constants ride on the same
+    EASE-Grid 2.0 cells, so selecting each with this shared helper guarantees
+    their subsets carry identical x/y coordinates and align cell-for-cell.
+
+    Raises:
+        ValueError: If the bounding box does not overlap the dataset grid.
+    """
+    x_min, y_min, x_max, y_max = latlon_bbox_to_ease(bbox)
+    subset = obj.sel(
+        x=_bounds_slice(obj.x, x_min, x_max),
+        y=_bounds_slice(obj.y, y_min, y_max),
+    )
+    if subset.sizes["x"] == 0 or subset.sizes["y"] == 0:
+        msg = f"Bounding box {bbox} does not overlap the dataset grid."
+        raise ValueError(msg)
+    return subset
+
+
 def sm_rootzone_timeseries(
     ds: xr.Dataset,
     bbox: tuple[float, float, float, float],
@@ -246,14 +328,7 @@ def sm_rootzone_timeseries(
     Raises:
         ValueError: If the bounding box does not overlap the dataset grid.
     """
-    x_min, y_min, x_max, y_max = latlon_bbox_to_ease(bbox)
-    subset = ds.sel(
-        x=_bounds_slice(ds.x, x_min, x_max),
-        y=_bounds_slice(ds.y, y_min, y_max),
-    )
-    if subset.sizes["x"] == 0 or subset.sizes["y"] == 0:
-        msg = f"Bounding box {bbox} does not overlap the dataset grid."
-        raise ValueError(msg)
+    subset = _select_bbox(ds, bbox)
 
     # Mean over the box (NaN fill values over water/ice are skipped), then
     # aggregate the native 3-hourly steps into `freq` windows.
@@ -261,22 +336,123 @@ def sm_rootzone_timeseries(
     return spatial_mean.resample(time=freq).mean()
 
 
+def load_field_capacity_wilting_point(
+    constants_path: str,
+    bbox: tuple[float, float, float, float],
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """Extract volumetric field capacity and wilting point over a lat/lon box.
+
+    The SPL4SMLM file stores the geophysical constants in the
+    Land-Model-Constants_Data group while the x/y coordinates live in the root
+    group, so the two are opened separately and the coordinates attached to the
+    constants before subsetting.
+
+    The wilting point (clsm_wp) is already a volumetric water content
+    (m3 m-3), matching sm_rootzone.  The field capacity, however, is taken from
+    clsm_cdcr2 -- the column water-holding capacity in kg m-2 integrated over
+    the soil profile depth clsm_dzpr (m).  Dividing it by the mass of a full
+    water column (depth x water density) converts it to a volumetric field
+    capacity (m3 m-3) so the SWDI's numerator and denominator are dimensionally
+    consistent.
+
+    Arguments:
+        constants_path (str): Path to the SPL4SMLM HDF-5 granule (see
+            :func:`download_model_constants`).
+        bbox: (west, south, east, north) in degrees (lon/lat).
+
+    Returns:
+        tuple[xr.DataArray, xr.DataArray]: The (field_capacity, wilting_point)
+        DataArrays over the box, both in m3 m-3 and carrying the SMAP L4 x/y
+        coordinates so they align with a soil moisture subset over the same box.
+    """
+    open_kwargs = {"engine": "h5netcdf", "phony_dims": "sort"}
+    root = xr.open_dataset(constants_path, **open_kwargs)  # type: ignore[arg-type]
+    lmc = xr.open_dataset(constants_path, group=LMC_GROUP, **open_kwargs)  # type: ignore[arg-type]
+    lmc = lmc.assign_coords(x=root["x"], y=root["y"])
+
+    field_capacity = (
+        lmc[FIELD_CAPACITY_VAR] / (lmc[PROFILE_DEPTH_VAR] * WATER_DENSITY)
+    ).rename("field_capacity")
+    wilting_point = lmc[WILTING_POINT_VAR].rename("wilting_point")
+
+    return _select_bbox(field_capacity, bbox), _select_bbox(wilting_point, bbox)
+
+
+def swdi_timeseries(
+    ds: xr.Dataset,
+    constants_path: str,
+    bbox: tuple[float, float, float, float],
+    freq: str = "3D",
+    variable: str = "sm_rootzone",
+) -> xr.DataArray:
+    """Compute a box-averaged Soil Water Deficit Index (SWDI) time series.
+
+    The SWDI of a grid cell is::
+
+        SWDI = ((sm - sm_fc) / (sm_fc - sm_wp)) * 10
+
+    where ``sm`` is the root-zone soil moisture, ``sm_fc`` the field capacity
+    and ``sm_wp`` the wilting point (all m3 m-3). The SWDI is computed
+    per cell and then spatially averaged over the bbox.
+
+    Field capacity and wilting point are constant in time, so aggregating the
+    soil moisture to `freq` windows before forming the (linear) SWDI is
+    equivalent to forming it first and then aggregating; the soil moisture is
+    resampled first so each window's SWDI is built from that window's moisture.
+
+    Arguments:
+        ds (xr.Dataset): Soil moisture dataset from :func:`virtualize_smap_l4`
+            or :func:`open_virtual_zarr`.
+        constants_path (str): Path to the SPL4SMLM HDF-5 granule.
+        bbox: (west, south, east, north) in degrees (lon/lat).
+        freq (str): Pandas offset alias for the temporal aggregation window
+            ("3D" = 3-day means).
+        variable (str): The root-zone soil moisture variable to use.
+
+    Returns:
+        xr.DataArray: A 1-D DataArray of the box-averaged SWDI indexed by time.
+
+    Raises:
+        ValueError: If the bounding box does not overlap the dataset grid.
+    """
+    # Root-zone soil moisture over the box, aggregated to `freq` windows per
+    # cell (NaN fill values over water/ice are skipped).
+    sm = _select_bbox(ds, bbox)[variable].resample(time=freq).mean()
+
+    # Per-cell field capacity and wilting point over the same box; the shared
+    # _select_bbox selection guarantees identical x/y coordinates, so xarray
+    # broadcasts them against the (time, y, x) soil moisture cell-for-cell.
+    field_capacity, wilting_point = load_field_capacity_wilting_point(
+        constants_path, bbox
+    )
+
+    swdi = (sm - field_capacity) / (field_capacity - wilting_point) * 10.0
+
+    # Average the SWDI (not the soil moisture) across the box.
+    return swdi.mean(dim=("x", "y")).rename("swdi")
+
+
 if __name__ == "__main__":
-    ds = virtualize_smap_l4(("2026-06-01", "2026-06-15"))
+    #ds = virtualize_smap_l4(("2026-06-01", "2026-06-15"))
 
     # Persist the virtual dataset as a kerchunk virtual Zarr reference file.
-    zarr_path = save_virtual_zarr(ds, "smap_l4_virtual.json")
-    print(f"Saved virtual Zarr references to {zarr_path}")
+    #zarr_path = save_virtual_zarr(ds, "smap_l4_virtual.json")
+    #print(f"Saved virtual Zarr references to {zarr_path}")
 
     # Reopen straight from the references -- no re-search or re-virtualize.
+    zarr_path = "inputs/SPL4SMGP_virtual_https.json"
     ds = open_virtual_zarr(zarr_path)
-    print(ds)
+
+    # The field capacity and wilting point come from the single, static
+    # SPL4SMLM land-model-constants granule.
+    constants_path = download_model_constants()
+    print(f"Downloaded land-model constants to {constants_path}")
 
     # Same bounding box as notebook (west, south, east, north):
     bbox = (-111.0, 45.0, -106.0, 50.0)
-    timeseries = sm_rootzone_timeseries(ds, bbox, freq="3D")
+    timeseries = swdi_timeseries(ds, constants_path, bbox, freq="3D")
 
-    out_path = "sm_rootzone_timeseries.csv"
+    out_path = "data/swdi_timeseries.csv"
     timeseries.to_dataframe().to_csv(out_path)
     print(timeseries)
     print(f"Saved time series to {out_path}")
