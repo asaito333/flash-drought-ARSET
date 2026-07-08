@@ -311,15 +311,21 @@ def sm_rootzone_timeseries(
     bbox: tuple[float, float, float, float],
     freq: str = "3D",
     variable: str = "sm_rootzone",
+    start: str | None = None,
+    stop: str | None = None,
 ) -> xr.DataArray:
     """Spatially average a variable over a lat/lon box and aggregate in time.
 
     Arguments:
-        ds (xr.Dataset): The dataset returned by :func:`virtualize_smap_l4`.
+        ds (xr.Dataset): The SMAP L4 virtual dataset.
         bbox: (west, south, east, north) in degrees (lon/lat).
         freq (str): Pandas offset alias for the temporal aggregation window
             ("3D" = 3-day means).
         variable (str): The variable to aggregate.
+        start (str | None): Optional start date (e.g. "2019" or "2019-01-01").
+            If None, begins at the start of the dataset.
+        stop (str | None): Optional end date (e.g. "2019" or "2019-12-31"),
+            inclusive. If None, runs to the end of the dataset.
 
     Returns:
         xr.DataArray: A 1-D DataArray of the box-averaged, freq-aggregated variable
@@ -329,6 +335,9 @@ def sm_rootzone_timeseries(
         ValueError: If the bounding box does not overlap the dataset grid.
     """
     subset = _select_bbox(ds, bbox)
+
+    if start is not None or stop is not None:
+        subset = subset.sel(time=slice(start, stop))
 
     # Mean over the box (NaN fill values over water/ice are skipped), then
     # aggregate the native 3-hourly steps into `freq` windows.
@@ -384,6 +393,8 @@ def swdi_timeseries(
     bbox: tuple[float, float, float, float],
     freq: str = "3D",
     variable: str = "sm_rootzone",
+    start: str | None = None,
+    stop: str | None = None,
 ) -> xr.DataArray:
     """Compute a box-averaged Soil Water Deficit Index (SWDI) time series.
 
@@ -401,13 +412,16 @@ def swdi_timeseries(
     resampled first so each window's SWDI is built from that window's moisture.
 
     Arguments:
-        ds (xr.Dataset): Soil moisture dataset from :func:`virtualize_smap_l4`
-            or :func:`open_virtual_zarr`.
+        ds (xr.Dataset): The SMAP L4 virtual dataset.
         constants_path (str): Path to the SPL4SMLM HDF-5 granule.
         bbox: (west, south, east, north) in degrees (lon/lat).
         freq (str): Pandas offset alias for the temporal aggregation window
             ("3D" = 3-day means).
         variable (str): The root-zone soil moisture variable to use.
+        start (str | None): Optional start date (e.g. "2019" or "2019-01-01").
+            If None, begins at the start of the dataset.
+        stop (str | None): Optional end date (e.g. "2019" or "2019-12-31"),
+            inclusive. If None, runs to the end of the dataset.
 
     Returns:
         xr.DataArray: A 1-D DataArray of the box-averaged SWDI indexed by time.
@@ -415,9 +429,12 @@ def swdi_timeseries(
     Raises:
         ValueError: If the bounding box does not overlap the dataset grid.
     """
-    # Root-zone soil moisture over the box, aggregated to `freq` windows per
-    # cell (NaN fill values over water/ice are skipped).
-    sm = _select_bbox(ds, bbox)[variable].resample(time=freq).mean()
+    subset = _select_bbox(ds, bbox)
+
+    if start is not None or stop is not None:
+        subset = subset.sel(time=slice(start, stop))
+
+    sm = subset[variable].resample(time=freq).mean()
 
     # Per-cell field capacity and wilting point over the same box; the shared
     # _select_bbox selection guarantees identical x/y coordinates, so xarray
