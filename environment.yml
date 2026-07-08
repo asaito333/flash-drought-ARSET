@@ -5,6 +5,8 @@ channels:
 dependencies:
   - python>=3.12
   - cdsapi==0.7.7
+  - dask
+  - distributed
   - earthaccess
   - h5netcdf
   - ipykernel
@@ -14,4 +16,5 @@ dependencies:
   - requests
   - rioxarray
   - tqdm
+  - virtualizarr
   - xarray
