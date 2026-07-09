@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SIF Explorer</title>
+
+<!-- OpenLayers (full build: bundles geotiff.js, WebGLTile, WMTS) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openlayers/10.6.1/ol.min.css"
+      integrity="sha512-oVyisN6T8O7H9DnBc1w/IipxzLhNvJERKa0Rx9fKEtaodE7UXQAypIHamYzQPAqVxp0pVl25e4spVQWIVfu6eA=="
+      crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --panel:      #10191f;   /* instrument housing            */
+    --panel-2:    #17242d;   /* raised surface                */
+    --line:       #2a3d4a;   /* hairline / divider            */
+    --line-soft:  #21323d;
+    --ink:        #e2edf3;   /* primary text                  */
+    --ink-mute:   #86a0b0;   /* secondary text                */
+    --ink-dim:    #5c7484;   /* tertiary / captions           */
+    --accent:     #e0a54b;   /* single functional accent      */
+    --accent-dim: #7a5c2c;
+    --bad:        #e5765c;
+    --shadow:     0 8px 28px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.03) inset;
+    --r:          10px;
+  }
+
+  html,body{height:100%;margin:0;background:#000;}
+  #map{position:absolute;inset:0;background:#0a1116;}
+
+  /* OL canvas sits under our chrome */
+  .ol-viewport canvas{image-rendering:auto;}
+
+  body{
+    font-family:"IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior:none;
+  }
+
+  .mono{font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-variant-numeric:tabular-nums;}
+
+  /* ---- shared panel chrome ------------------------------------------- */
+  .sv-panel{
+    position:absolute;
+    background:linear-gradient(180deg, rgba(23,36,45,.94), rgba(16,25,31,.94));
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    box-shadow:var(--shadow);
+    backdrop-filter:blur(8px) saturate(1.1);
+    -webkit-backdrop-filter:blur(8px) saturate(1.1);
+    z-index:5;
+  }
+
+  /* ---- control panel (top-left) -------------------------------------- */
+  #controls{ top:14px; left:14px; width:268px; padding:14px 14px 12px; }
+
+  .sv-eyebrow{
+    font-size:10.5px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--ink-dim); font-weight:600; display:flex; align-items:center; gap:8px;
+  }
+  .sv-eyebrow::before{
+    content:""; width:6px; height:6px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 8px var(--accent);
+  }
+  #controls h1{
+    margin:6px 0 2px; font-size:17px; font-weight:700; letter-spacing:-.01em; line-height:1.15;
+  }
+  #controls .sub{ font-size:11.5px; color:var(--ink-mute); margin-bottom:12px; }
+  #controls .sub .mono{ color:var(--ink); }
+
+  .sv-divider{ height:1px; background:var(--line-soft); margin:10px -14px; }
+
+  /* layer rows */
+  .layer{ display:grid; grid-template-columns:auto 1fr auto; align-items:center;
+          gap:10px; padding:7px 0; }
+  .layer + .layer{ border-top:1px solid var(--line-soft); }
+  .layer .swatch{ width:14px; height:14px; border-radius:4px; border:1px solid rgba(255,255,255,.12); }
+  .layer .meta .name{ font-size:13px; font-weight:500; line-height:1.1; }
+  .layer .meta .desc{ font-size:10.5px; color:var(--ink-dim); margin-top:2px; line-height:1.25; }
+
+  /* toggle switch */
+  .toggle{ position:relative; width:38px; height:22px; flex:none; cursor:pointer; }
+  .toggle input{ position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+  .toggle .track{
+    position:absolute; inset:0; border-radius:999px;
+    background:#0e161c; border:1px solid var(--line);
+    transition:background .18s ease, border-color .18s ease;
+  }
+  .toggle .knob{
+    position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+    background:var(--ink-dim); transition:transform .18s ease, background .18s ease;
+  }
+  .toggle input:checked + .track{ background:rgba(224,165,75,.20); border-color:var(--accent-dim); }
+  .toggle input:checked + .track + .knob{ transform:translateX(16px); background:var(--accent); }
+  .toggle input:focus-visible + .track{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* opacity row */
+  .opacity{ display:flex; align-items:center; gap:10px; padding:9px 0 2px; }
+  .opacity label{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-dim); white-space:nowrap; }
+  .opacity output{ font-size:11px; color:var(--ink-mute); width:34px; text-align:right; }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; height:4px; border-radius:2px; flex:1;
+    background:linear-gradient(90deg, var(--accent) 0 var(--fill,100%), #0e161c var(--fill,100%) 100%);
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--ink); border:2px solid var(--accent); cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%; background:var(--ink);
+    border:2px solid var(--accent); cursor:pointer;
+  }
+  input[type=range]:focus-visible{ box-shadow:0 0 0 2px var(--panel), 0 0 0 4px var(--accent); border-radius:6px; }
+
+  .sv-btn{
+    appearance:none; width:100%; margin-top:11px; padding:8px 10px;
+    background:#0e161c; color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; font:inherit; font-size:12px; font-weight:500; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .sv-btn:hover{ border-color:var(--accent-dim); background:#121d24; }
+  .sv-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* ---- colorbar (bottom-right, above attribution) -------------------- */
+  #colorbar{ right:14px; bottom:64px; padding:12px 14px 10px; width:132px; }
+  #colorbar .cb-title{ font-size:11px; font-weight:600; letter-spacing:.02em; }
+  #colorbar .cb-unit{ font-size:9.5px; color:var(--ink-dim); margin-top:1px; margin-bottom:9px; }
+  .cb-body{ display:grid; grid-template-columns:16px 1fr; gap:9px; height:150px; }
+  .cb-bar{ width:16px; height:100%; border-radius:4px; border:1px solid rgba(255,255,255,.14); }
+  .cb-ticks{ position:relative; font-size:10.5px; color:var(--ink-mute); }
+  .cb-tick{ position:absolute; left:0; transform:translateY(-50%); display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .cb-tick::before{ content:""; width:6px; height:1px; background:var(--line); }
+
+  /* ---- readout console (top-right) ----------------------------------- */
+  #readout{ top:14px; right:14px; padding:11px 14px; min-width:186px; }
+  #readout .ro-head{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-dim); font-weight:600; margin-bottom:8px; }
+  .ro-row{ display:flex; justify-content:space-between; align-items:baseline; gap:14px; padding:3px 0; }
+  .ro-row .k{ font-size:11px; color:var(--ink-mute); }
+  .ro-row .v{ font-size:13px; color:var(--ink); }
+  .ro-row .v.big{ font-size:15px; font-weight:600; }
+  .ro-row .v .u{ font-size:9.5px; color:var(--ink-dim); margin-left:3px; }
+  .ro-src{ margin-top:7px; padding-top:7px; border-top:1px solid var(--line-soft);
+           font-size:9.5px; color:var(--ink-dim); display:flex; align-items:center; gap:6px; }
+  .ro-src .dot{ width:6px; height:6px; border-radius:50%; background:var(--ink-dim); }
+  .ro-src.live .dot{ background:var(--accent); box-shadow:0 0 7px var(--accent); }
+
+  /* ---- attribution / status ------------------------------------------ */
+  #attrib{
+    position:absolute; right:14px; bottom:14px; z-index:5;
+    font-size:10px; color:var(--ink-dim); text-align:right; line-height:1.5;
+    background:rgba(16,25,31,.72); padding:6px 9px; border-radius:7px;
+    border:1px solid var(--line-soft); backdrop-filter:blur(5px);
+  }
+  #attrib b{ color:var(--ink-mute); font-weight:600; }
+
+  #loading{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6;
+    display:flex; align-items:center; gap:11px; padding:11px 16px;
+    background:rgba(16,25,31,.92); border:1px solid var(--line); border-radius:999px;
+    box-shadow:var(--shadow); font-size:12.5px; color:var(--ink-mute);
+  }
+  .spinner{ width:15px; height:15px; border-radius:50%;
+    border:2px solid var(--line); border-top-color:var(--accent); animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  #errbox{
+    position:absolute; left:50%; top:18px; transform:translateX(-50%); z-index:7;
+    max-width:min(560px,90vw); display:none; gap:11px; align-items:flex-start;
+    padding:12px 14px; background:#241417; border:1px solid #5c2b2b; border-radius:10px;
+    box-shadow:var(--shadow);
+  }
+  #errbox .ic{ color:var(--bad); font-weight:700; font-size:16px; line-height:1.2; }
+  #errbox .tx{ font-size:12px; color:#f0d5cf; line-height:1.45; }
+  #errbox .tx b{ color:#fff; }
+  #errbox .tx code{ font-family:"IBM Plex Mono",monospace; background:rgba(0,0,0,.3);
+                    padding:1px 5px; border-radius:4px; color:#ffd9cf; }
+
+  /* OpenLayers default control restyle to match */
+  .ol-zoom{ top:auto; bottom:14px; left:14px; }
+  .ol-control button{
+    background:rgba(16,25,31,.9)!important; color:var(--ink)!important;
+    border:1px solid var(--line)!important; font-weight:500;
+  }
+  .ol-control button:hover{ background:#17242d!important; }
+  .ol-control button:focus-visible{ outline:2px solid var(--accent)!important; }
+  .ol-attribution{ display:none; } /* we roll our own */
+
+  @media (max-width:640px){
+    #controls{ width:calc(100% - 28px); }
+    #readout{ display:none; }
+    #colorbar{ display:none; }
+    .ol-zoom{ left:14px; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms!important; transition-duration:.001ms!important; }
+  }
+</style>
+</head>
+<body>
+  <div id="map" role="application" aria-label="SIF raster map"></div>
+
+  <!-- Control panel -->
+  <section id="controls" class="sv-panel" aria-label="Layer controls">
+    <div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div>
+    <h1>Raster Viewer</h1>
+    <div class="sub"><span class="mono" id="scene-label">2017-185</span> · <span class="mono" id="date-label"></span></div>
+
+    <div class="layer">
+      <span class="swatch" id="sw-l1"></span>
+      <div class="meta"><div class="name">GOSIF (global)</div><div class="desc">0.05° · scaled Int16 → W m⁻² sr⁻¹ μm⁻¹</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l1" checked aria-label="Toggle GOSIF global layer"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="opacity">
+      <label for="op-l1">Opacity</label>
+      <input type="range" id="op-l1" min="0" max="100" value="100" aria-label="GOSIF layer opacity">
+      <output id="op-l1-out">100%</output>
+    </div>
+
+    <div class="layer">
+      <span class="swatch" id="sw-l2"></span>
+      <div class="meta"><div class="name">Mean SIF (region)</div><div class="desc">45–50°N, 106–111°W · band 3 · Float32</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l2" checked aria-label="Toggle regional mean SIF overlay"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="layer">
+      <span class="swatch" id="sw-l3" style="background:linear-gradient(135deg,#3a6ea5,#7fae5a);"></span>
+      <div class="meta"><div class="name">True Color</div><div class="desc">VIIRS/SNPP · NASA GIBS WMTS</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle VIIRS true color basemap"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <button class="sv-btn" id="btn-fit">⤢ Fit to study region</button>
+  </section>
+
+  <!-- Colorbar -->
+  <aside id="colorbar" class="sv-panel" aria-hidden="true">
+    <div class="cb-title">SIF</div>
+    <div class="cb-unit mono">W m⁻² sr⁻¹ μm⁻¹</div>
+    <div class="cb-body">
+      <div class="cb-bar" id="cb-bar"></div>
+      <div class="cb-ticks mono" id="cb-ticks"></div>
+    </div>
+  </aside>
+
+  <!-- Readout console -->
+  <aside id="readout" class="sv-panel" aria-live="polite">
+    <div class="ro-head">Cursor Readout</div>
+    <div class="ro-row"><span class="k">Lon</span><span class="v mono" id="ro-lon">—</span></div>
+    <div class="ro-row"><span class="k">Lat</span><span class="v mono" id="ro-lat">—</span></div>
+    <div class="ro-row"><span class="k">SIF</span><span class="v big mono" id="ro-val">—</span></div>
+    <div class="ro-src" id="ro-src"><span class="dot"></span><span id="ro-src-txt">move cursor over map</span></div>
+  </aside>
+
+  <div id="attrib">
+    <b>Imagery</b> NASA GIBS · VIIRS/SNPP CorrectedReflectance<br>
+    <b>SIF</b> GOSIF (Li &amp; Xiao) · <b>Map</b> OpenLayers · EPSG:4326
+  </div>
+
+  <div id="loading"><span class="spinner"></span><span>Loading rasters…</span></div>
+
+  <div id="errbox" role="alert">
+    <span class="ic">!</span>
+    <div class="tx" id="err-text"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/openlayers/10.6.1/dist/ol.min.js"
+          integrity="sha512-NEUbbO7KI1OYn+IHcF70vm3ON0obczJz9PJFwxHkfPCsT14UqDD4roG7rF5WpwkXRTPvysFb6Wvw/Tjh5tfv8g=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/geotiff/dist-browser/geotiff.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+  /* ==================================================================== *
+   *  CONFIG  —  edit paths / date / value range here                     *
+   * ==================================================================== */
+  const CONFIG = {
+    // Layer 1 — global GOSIF raster.  File name is GOSIF_{year}{doy}.tif
+    year: 2017,
+    doy:  185,                                   // -> data/gosif/GOSIF_2017185.tif
+    l1Dir: 'data/gosif',
+    scaleL1: 0.0001,                             // stored Int16 -> W m^-2 sr^-1 um^-1
+    nodataL1: 32766,                             // values >= this are nodata (covers 32766 & 32767)
+
+    // Layer 2 — preprocessed regional overlay.  Band 3 = "mean SIF".
+    l2Url: 'inputs/sif_increments/GOSIF_dSIF_clim_185.tif',
+    l2Band: 3,
+
+    // Layer 3 — NASA GIBS basemap.  TIME defaults to the DOY above; override if needed.
+    gibsLayer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
+    gibsUrl: 'https://gibs-a.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
+    time: null,                                  // null -> derived from year/doy
+
+    // Shared color scale (both SIF layers use the same ramp & domain).
+    domain: { min: 0.0, max: 0.6 },              // W m^-2 sr^-1 um^-1
+    ticks: [0, 0.15, 0.30, 0.45, 0.60],
+
+    // Study region  [west, south, east, north]  (lon/lat)
+    region: [-111, 45, -106, 50],
+  };
+
+  // NEO diverging vegetation ramp (fraction of domain -> hex).
+  const NEO_DIV_VEG = [
+    [0.0000,'#530000'],[0.0101,'#540000'],[0.0202,'#560000'],[0.0303,'#5a0000'],
+    [0.0404,'#5b0000'],[0.0505,'#5e0000'],[0.0606,'#610000'],[0.0707,'#620000'],
+    [0.0808,'#640000'],[0.0909,'#670000'],[0.1010,'#6b0000'],[0.1111,'#6d0000'],
+    [0.1212,'#710000'],[0.1313,'#740000'],[0.1414,'#770000'],[0.1515,'#7a0000'],
+    [0.1616,'#7d0000'],[0.1717,'#830301'],[0.1818,'#860c04'],[0.1919,'#8c1507'],
+    [0.2020,'#911e0b'],[0.2121,'#96270d'],[0.2222,'#9b3110'],[0.2323,'#9f3a13'],
+    [0.2424,'#a44317'],[0.2525,'#aa4d19'],[0.2626,'#b0571d'],[0.2727,'#b56020'],
+    [0.2828,'#bb6c24'],[0.2929,'#c07529'],[0.3030,'#c27a30'],[0.3131,'#c68139'],
+    [0.3232,'#c88743'],[0.3333,'#ff8e4c'],[0.3434,'#cf9454'],[0.3535,'#d19b5e'],
+    [0.3636,'#d5a267'],[0.3737,'#d8a970'],[0.3838,'#dbb079'],[0.3939,'#deb683'],
+    [0.4040,'#e1bd8d'],[0.4141,'#e4c495'],[0.4242,'#e7cb9f'],[0.4343,'#ebd1a8'],
+    [0.4444,'#eed8b1'],[0.4545,'#f1e1bd'],[0.4646,'#f4e6c5'],[0.4747,'#f7edce'],
+    [0.4848,'#fbf5d8'],[0.4949,'#fdfce2'],[0.5051,'#fbfde1'],[0.5152,'#f5fada'],
+    [0.5253,'#eff7d1'],[0.5354,'#e8f3c8'],[0.5455,'#e2f1bf'],[0.5556,'#dbedb6'],
+    [0.5657,'#d5eaae'],[0.5758,'#cde7a6'],[0.5859,'#c7e49e'],[0.5960,'#c1e194'],
+    [0.6061,'#bbde8c'],[0.6162,'#b5da83'],[0.6263,'#afd77b'],[0.6364,'#a8d573'],
+    [0.6465,'#a1d16b'],[0.6566,'#9bcd62'],[0.6667,'#96cb5b'],[0.6768,'#8fc852'],
+    [0.6869,'#89c54a'],[0.6970,'#84c243'],[0.7071,'#7ec03b'],[0.7172,'#73b935'],
+    [0.7273,'#69b432'],[0.7374,'#5fae2d'],[0.7475,'#56a92a'],[0.7576,'#4ca426'],
+    [0.7677,'#439f23'],[0.7778,'#3a9a1e'],[0.7879,'#31951a'],[0.7980,'#289018'],
+    [0.8081,'#1f8b13'],[0.8182,'#178610'],[0.8283,'#0e810d'],[0.8384,'#0c7d0c'],
+    [0.8485,'#0b790b'],[0.8586,'#0b750b'],[0.8687,'#0a720a'],[0.8788,'#0a6e0a'],
+    [0.8889,'#0a6b0a'],[0.8990,'#096709'],[0.9091,'#096409'],[0.9192,'#086108'],
+    [0.9293,'#085f08'],[0.9394,'#085b08'],[0.9495,'#075907'],[0.9596,'#075507'],
+    [0.9697,'#075307'],[0.9798,'#065106'],[0.9899,'#064f06'],[1.0000,'#064c06'],
+  ];
+
+  /* ------------------------------------------------------------------ */
+  const $ = (id) => document.getElementById(id);
+
+  function showError(html){
+    $('err-text').innerHTML = html;
+    $('errbox').style.display = 'flex';
+  }
+  function hideLoading(){ const l=$('loading'); if(l) l.style.display='none'; }
+
+  if (typeof ol === 'undefined') {
+    hideLoading();
+    showError('Could not load <b>OpenLayers</b> from the CDN. This viewer needs network access to '
+      + '<code>cdn.jsdelivr.net</code>. If the notebook host blocks it, download <code>ol.js</code> + '
+      + '<code>ol.css</code> and point the two tags at local copies.');
+    throw new Error('OpenLayers failed to load');
+  }
+
+  /* ---- derived config ---------------------------------------------- */
+  const pad3 = (n) => String(n).padStart(3, '0');
+  const L1_URL = `${CONFIG.l1Dir}/GOSIF_${CONFIG.year}${pad3(CONFIG.doy)}.tif`;
+
+  function doyToISO(year, doy){
+    const d = new Date(Date.UTC(year, 0, 1));
+    d.setUTCDate(d.getUTCDate() + (doy - 1));
+    return d.toISOString().slice(0, 10);
+  }
+  const TIME = CONFIG.time || doyToISO(CONFIG.year, CONFIG.doy);
+  $('date-label').textContent = TIME;
+  $('scene-label').textContent = `${CONFIG.year}-${pad3(CONFIG.doy)}`;
+
+  /* ---- shared color ramp ------------------------------------------- */
+  const { min: DMIN, max: DMAX } = CONFIG.domain;
+  // interpolate stops [value, color, value, color, ...] over the domain
+  const rampStops = [];
+  for (const [f, hex] of NEO_DIV_VEG) rampStops.push(DMIN + f * (DMAX - DMIN), hex);
+  const ramp = (valueExpr) => ['interpolate', ['linear'], valueExpr, ...rampStops];
+
+  /* ==================================================================== *
+   *  LAYER 1 — GOSIF global (Int16, scale 1e-4, nodata >= 32766)          *
+   * ==================================================================== */
+  const l1Source = new ol.source.GeoTIFF({
+    sources: [{ url: L1_URL, bands: [1] }],
+    normalize: false,          // keep raw integers so we can compare to nodata & scale ourselves
+    interpolate: false,        // show true pixels, no smoothing
+    convertToRGB: false,
+    projection: 'EPSG:4326',
+    wrapX: true,
+    transition: 0,
+  });
+  l1Source.on('change', () => {
+    if (l1Source.getState() === 'error')
+      showError(`Couldn't read <b>Layer 1</b>: <code>${L1_URL}</code>. `
+        + `Check the file exists and is served (with byte-range support) relative to this page.`);
+  });
+
+  const rawL1  = ['band', 1];
+  const dispL1 = ['*', rawL1, CONFIG.scaleL1];
+  const l1Layer = new ol.layer.WebGLTile({
+    source: l1Source,
+    style: { color: ['case', ['<', rawL1, CONFIG.nodataL1], ramp(dispL1), [0,0,0,0]] },
+  });
+
+  /* ==================================================================== *
+   *  LAYER 2 — regional mean SIF (Float32 band 3, NaN nodata)             *
+   * ==================================================================== */
+  const l2Source = new ol.source.GeoTIFF({
+    sources: [{ url: CONFIG.l2Url, bands: [CONFIG.l2Band] }],
+    normalize: false,
+    interpolate: false,
+    convertToRGB: false,
+    projection: 'EPSG:4326',
+    wrapX: false,
+    transition: 0,
+  });
+  l2Source.on('change', () => {
+    if (l2Source.getState() === 'error')
+      showError(`Couldn't read <b>Layer 2</b>: <code>${CONFIG.l2Url}</code> (band ${CONFIG.l2Band}). `
+        + `Check the path relative to this page.`);
+  });
+
+  // NaN fails every comparison, so an in-range test transparently rejects nodata.
+  const vL2   = ['band', 1];
+  const validL2 = ['all', ['>=', vL2, -1], ['<=', vL2, 5]];
+  const l2Layer = new ol.layer.WebGLTile({
+    source: l2Source,
+    style: { color: ['case', validL2, ramp(vL2), [0,0,0,0]] },
+  });
+
+  // Footprint outline for the overlay patch (toggles with Layer 2).
+  const footprint = new ol.layer.Vector({
+    source: new ol.source.Vector({
+      features: [ new ol.Feature(ol.geom.Polygon.fromExtent(CONFIG.region)) ],
+    }),
+    style: new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: 'rgba(224,165,75,.9)', width: 1.25, lineDash: [4,3] }),
+    }),
+  });
+
+  /* ==================================================================== *
+   *  LAYER 3 — NASA GIBS WMTS basemap (EPSG:4326, 250m matrix set)        *
+   *  Tiled space: origin (-180, 90); level 0 = 2x1 512px tiles;           *
+   *  resolutions 0.5625 / 2^z deg/px for z = 0..8.                        *
+   * ==================================================================== */
+  const gibsRes = [], gibsIds = [];
+  for (let z = 0; z <= 8; z++) { gibsRes.push(0.5625 / Math.pow(2, z)); gibsIds.push(String(z)); }
+
+  const basemap = new ol.layer.Tile({
+    source: new ol.source.WMTS({
+      url: `${CONFIG.gibsUrl}?TIME=${TIME}`,
+      layer: CONFIG.gibsLayer,
+      matrixSet: '250m',
+      format: 'image/jpeg',
+      style: 'default',
+      projection: ol.proj.get('EPSG:4326'),
+      requestEncoding: 'KVP',
+      crossOrigin: 'anonymous',
+      wrapX: true,
+      tileGrid: new ol.tilegrid.WMTS({
+        origin: [-180, 90],
+        extent: [-180, -90, 180, 90],   // clamp requests to valid data extent
+        resolutions: gibsRes,
+        matrixIds: gibsIds,
+        tileSize: 512,
+      }),
+    }),
+  });
+  basemap.getSource().on('tileloaderror', () => {
+    $('ro-src-txt').textContent && null; // non-fatal; basemap tiles for a date may be missing
+  });
+
+  /* ==================================================================== *
+   *  MAP                                                                  *
+   * ==================================================================== */
+  const map = new ol.Map({
+    target: 'map',
+    layers: [basemap, l1Layer, l2Layer, footprint],
+    view: new ol.View({
+      projection: 'EPSG:4326',
+      center: [ (CONFIG.region[0]+CONFIG.region[2])/2, (CONFIG.region[1]+CONFIG.region[3])/2 ],
+      extent: [-180, -90, 180, 90],
+      resolution: 0.012,
+      minZoom: 0,
+      maxZoom: 12,
+      constrainResolution: false,
+    }),
+  });
+
+  function fitRegion(){
+    const size = map.getSize();
+    if (!size || !size[0]) { requestAnimationFrame(fitRegion); return; }
+    map.getView().fit(CONFIG.region, { size, padding: [24,24,24,24], maxZoom: 9, duration: 250 });
+  }
+  requestAnimationFrame(fitRegion);
+  $('btn-fit').addEventListener('click', fitRegion);
+
+  map.once('rendercomplete', hideLoading);
+  setTimeout(hideLoading, 8000); // safety: never leave the spinner stuck
+
+  /* ==================================================================== *
+   *  UI — toggles, opacity, colorbar, readout                            *
+   * ==================================================================== */
+  // toggles
+  $('tg-l1').addEventListener('change', e => l1Layer.setVisible(e.target.checked));
+  $('tg-l2').addEventListener('change', e => { l2Layer.setVisible(e.target.checked); footprint.setVisible(e.target.checked); });
+  $('tg-l3').addEventListener('change', e => basemap.setVisible(e.target.checked));
+
+  // opacity (Layer 1)
+  const opIn = $('op-l1'), opOut = $('op-l1-out');
+  function syncOpacity(){
+    const v = +opIn.value;
+    l1Layer.setOpacity(v/100);
+    opOut.textContent = v + '%';
+    opIn.style.setProperty('--fill', v + '%');
+  }
+  opIn.addEventListener('input', syncOpacity);
+  syncOpacity();
+
+  // swatches (min & max of ramp)
+  $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+  $('sw-l2').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+
+  // colorbar gradient + ticks
+  (function buildColorbar(){
+    const stops = NEO_DIV_VEG.map(([f,hex]) => `${hex} ${(f*100).toFixed(1)}%`).join(', ');
+    $('cb-bar').style.background = `linear-gradient(to top, ${stops})`;
+    const span = DMAX - DMIN, ticks = $('cb-ticks');
+    for (const t of CONFIG.ticks){
+      const el = document.createElement('div');
+      el.className = 'cb-tick';
+      el.style.top = `${(1 - (t - DMIN)/span) * 100}%`;
+      el.textContent = t.toFixed(2);
+      ticks.appendChild(el);
+    }
+  })();
+
+  // cursor readout — raw band values via WebGLTile.getData()
+  const roLon=$('ro-lon'), roLat=$('ro-lat'), roVal=$('ro-val'),
+        roSrc=$('ro-src'), roSrcTxt=$('ro-src-txt');
+
+  function readAt(pixel){
+    // Prefer the overlay when it's visible & has a value here; else the global raster.
+    if (l2Layer.getVisible()){
+      try {
+        const d = l2Layer.getData(pixel);
+        if (d && d.length){ const v = d[0];
+          if (Number.isFinite(v) && v > -1 && v < 5) return { v, src: 'Mean SIF (region)' };
+        }
+      } catch(_){}
+    }
+    if (l1Layer.getVisible()){
+      try {
+        const d = l1Layer.getData(pixel);
+        if (d && d.length){ const raw = d[0];
+          if (Number.isFinite(raw) && raw < CONFIG.nodataL1) return { v: raw * CONFIG.scaleL1, src: 'GOSIF (global)' };
+          if (Number.isFinite(raw)) return { v: null, src: 'GOSIF (global)', nodata: true };
+        }
+      } catch(_){}
+    }
+    return null;
+  }
+
+  map.on('pointermove', (evt) => {
+    if (evt.dragging) return;
+    const [lon, lat] = evt.coordinate;
+    roLon.textContent = lon.toFixed(4) + '°';
+    roLat.textContent = lat.toFixed(4) + '°';
+    const r = readAt(evt.pixel);
+    if (!r){ roVal.innerHTML = '—'; roSrc.classList.remove('live'); roSrcTxt.textContent = 'no raster here'; return; }
+    roSrc.classList.add('live');
+    roSrcTxt.textContent = r.src;
+    if (r.nodata || r.v == null){ roVal.innerHTML = '<span style="color:var(--ink-dim)">nodata</span>'; }
+    else { roVal.innerHTML = r.v.toFixed(3) + '<span class="u">W m⁻² sr⁻¹ μm⁻¹</span>'; }
+  });
+  map.getViewport().addEventListener('mouseleave', () => {
+    roLon.textContent=roLat.textContent='—'; roVal.innerHTML='—';
+    roSrc.classList.remove('live'); roSrcTxt.textContent='move cursor over map';
+  });
+  </script>
+</body>
+</html>
