@@ -1,10 +1,11 @@
 # Flash Drought NASA ARSET Course
 ### Agricultural Flash Drought Detection Using Solar-Induced Fluorescence (SIF) and Soil Moisture Data
 
-This repository contains code the NASA ARSET course on Agricultural Flash Drought. The training is comprised of two exercises:
+This repository contains code the NASA ARSET course on Agricultural Flash Drought. The training is comprised of two exercises with additional material in a third notebook:
 
-1. **1_drought_indicators.ipynb**: Methods for retrieving SIF and Soil Moisture data from the OCO-2 and SMAP missions, and deriving time series of the Rapid Change Index (RCI) based on these measurements. SIF-RCI and Soil Water Deficit Index (SWDI) will be used to detect flash droughts in two real-world scenarios.
+1. **1_drought_indicators.ipynb**: Methods for retrieving SIF and Soil Moisture data from the OCO-2 and SMAP missions, and deriving time series of the Rapid Change Index (RCI) and Soil Water Deficit Index (SWDI) based on these measurements. These indicators will be used to assess flash droughts in two real-world scenarios.
 2. **2_detection.ipynb**: We will apply the indicators we derived in the first exercise to build a framework for detecting flash droughts in general. The effectiveness of different definitions of flash drought will be compared.
+3. **3_appendix.ipynb**: An appendix notebook is included to explain how the contents of the `notebooks/inputs/` directory were derived. These inputs are the result of steps that take a long time to run and so were pre-processed to improve the experience of running the main two notebooks.
 
 ## Learning Objectives
 
@@ -15,6 +16,22 @@ By the end of this course, you will learn how to:
 * Use a Jupyter Notebook to generate a time series of flash drought detection indices using Solar-Induced Fluorescence (SIF) and Soil Moisture (SM) data.
 * Compare the effectiveness of different heuristics applied to flash drought detection indices in real-world scenarios.
 * Identify historical flash drought occurrences in regions around the world by generalizing the data-driven approach outlined in the Jupyter notebook exercises.
+
+## Common Questions
+
+### Why are there Python scripts in addition to the Jupyter Notebooks?
+
+The code in the Jupyter notebooks in this course is designed to be focused around **conceptual understanding of the scientific technique** rather than implementation details of certain tasks. Helper functions, such as code for downloading data and rendering the interactive visualization, have been moved outside the notebook into standalone Python files.
+
+### What is the Appendix notebook? Do I need to run it?
+Some steps involved in processing the data, such as producing SIF climatology or virtualizing terabytes of SMAP data, take a long time to run (>10 minutes) and require a fast internet connection. The `3_appendix.ipynb` notebook explains these steps in detail, but it has already been run for you and its outputs have been saved in the `notebooks/inputs/` directory. **You do not need to run this notebook to complete the course**, but you may wish to run it on your own if you want to experiment with the flash drought technique outside of the case studies we discuss.
+
+### How do I use these notebooks for my own analysis?
+
+* All output files are saved to the `notebooks/data/` directory in GeoTIFF format for map-projected data, or CSV format for time series. If you prefer to use GIS software, the GeoTIFF files can readily be loaded into your application of choice.
+* **If you wish to use the technique from this course in your own region and time period of choice**, you will need to follow both the steps in the Appendix and the main two notebooks, replacing the date ranges and bounding box (bbox) coordinates with your own values where marked in the code cells. [A guide may be included to help with this process.]
+* **If you wish to do Near Real-Time (NRT) analysis with present data**, you will need to use a different SIF dataset other than GOSIF, e.g. [TROPOMI SIF](https://data-portal.s5p-pal.com/products/troposif.html), since GOSIF data are not updated on a timely cadence (only data through the end of 2024 are available as of the writing of this course). Likewise, the SMAP L4 virtual dataset that we use for deriving SWDI does not virtualize data past 2025, so you will need to use the Appendix notebook to virtualize more recent data. NASA's SMAP L4 collection has a 3-day latency.
+
 
 ## Contact
 
