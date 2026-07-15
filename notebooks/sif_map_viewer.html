@@ -130,7 +130,7 @@
   .sv-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
   /* ---- colorbar (bottom-right, above attribution) -------------------- */
-  #colorbar{ right:14px; bottom:64px; padding:12px 14px 10px; width:132px; }
+  #colorbar{ right:14px; bottom:64px; padding:12px 14px 10px; width:86px; }
   #colorbar .cb-title{ font-size:11px; font-weight:600; letter-spacing:.02em; }
   #colorbar .cb-unit{ font-size:9.5px; color:var(--ink-dim); margin-top:1px; margin-bottom:9px; }
   .cb-body{ display:grid; grid-template-columns:16px 1fr; gap:9px; height:150px; }
@@ -209,32 +209,38 @@
 
   <!-- Control panel -->
   <section id="controls" class="sv-panel" aria-label="Layer controls">
-    <div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div>
-    <h1>Raster Viewer</h1>
+    <!--div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div-->
+    <h1>SIF Anomaly Viewer</h1>
     <div class="sub"><span class="mono" id="scene-label">2017-185</span> · <span class="mono" id="date-label"></span></div>
 
-    <div class="layer">
+    <!--div class="layer">
       <span class="swatch" id="sw-l1"></span>
       <div class="meta"><div class="name">GOSIF (global)</div><div class="desc">0.05° · scaled Int16 → W m⁻² sr⁻¹ μm⁻¹</div></div>
       <label class="toggle"><input type="checkbox" id="tg-l1" checked aria-label="Toggle GOSIF global layer"><span class="track"></span><span class="knob"></span></label>
-    </div>
-
-    <div class="opacity">
-      <label for="op-l1">Opacity</label>
-      <input type="range" id="op-l1" min="0" max="100" value="100" aria-label="GOSIF layer opacity">
-      <output id="op-l1-out">100%</output>
-    </div>
+    </div-->
 
     <div class="layer">
       <span class="swatch" id="sw-l2"></span>
-      <div class="meta"><div class="name">Mean SIF (region)</div><div class="desc">45–50°N, 106–111°W · band 3 · Float32</div></div>
-      <label class="toggle"><input type="checkbox" id="tg-l2" checked aria-label="Toggle regional mean SIF overlay"><span class="track"></span><span class="knob"></span></label>
+      <div class="meta"><div class="name">SIF anomaly (region)</div><div class="desc">Current − 2001-2020 Mean</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l2" checked aria-label="Toggle regional SIF anomaly overlay"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="opacity">
+      <label for="op-l2">Opacity</label>
+      <input type="range" id="op-l2" min="0" max="100" value="100" aria-label="SIF anomaly layer opacity">
+      <output id="op-l2-out">100%</output>
     </div>
 
     <div class="layer">
       <span class="swatch" id="sw-l3" style="background:linear-gradient(135deg,#3a6ea5,#7fae5a);"></span>
-      <div class="meta"><div class="name">True Color</div><div class="desc">VIIRS/SNPP · NASA GIBS WMTS</div></div>
-      <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle VIIRS true color basemap"><span class="track"></span><span class="knob"></span></label>
+      <div class="meta"><div class="name">Corrected Reflectance</div><div class="desc">Suomi NPP VIIRS</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle VIIRS basemap"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="layer">
+      <span class="swatch" id="sw-l4" style="background:linear-gradient(135deg,#333,#ccc);"></span>
+      <div class="meta"><div class="name">Labels</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l4" checked aria-label="Toggle OSM labels"><span class="track"></span><span class="knob"></span></label>
     </div>
 
     <button class="sv-btn" id="btn-fit">⤢ Fit to study region</button>
@@ -242,7 +248,7 @@
 
   <!-- Colorbar -->
   <aside id="colorbar" class="sv-panel" aria-hidden="true">
-    <div class="cb-title">SIF</div>
+    <div class="cb-title">SIF Anomaly</div>
     <div class="cb-unit mono">W m⁻² sr⁻¹ μm⁻¹</div>
     <div class="cb-body">
       <div class="cb-bar" id="cb-bar"></div>
@@ -260,8 +266,8 @@
   </aside>
 
   <div id="attrib">
-    <b>Imagery</b> NASA GIBS · VIIRS/SNPP CorrectedReflectance<br>
-    <b>SIF</b> GOSIF (Li &amp; Xiao) · <b>Map</b> OpenLayers · EPSG:4326
+    <b>Imagery</b> NASA/GSFC/EOSDIS, Suomi NPP VIIRS<br>
+    <b>SIF</b> GOSIF (Li &amp; Xiao)
   </div>
 
   <div id="loading"><span class="spinner"></span><span>Loading rasters…</span></div>
@@ -288,7 +294,11 @@
     scaleL1: 0.0001,                             // stored Int16 -> W m^-2 sr^-1 um^-1
     nodataL1: 32766,                             // values >= this are nodata (covers 32766 & 32767)
 
-    // Layer 2 — preprocessed regional overlay.  Band 3 = "mean SIF".
+    // Layer 2 — SIF anomaly = (current SIF) − (regional mean SIF).
+    //   l2Url band l2Band ("mean SIF") is the climatological mean.  The
+    //   current SIF comes from the global Layer-1 GOSIF.  Both are read and
+    //   differenced in-browser with geotiff.js (see buildAnomalyBlob), which
+    //   emits a single-band anomaly GeoTIFF for this layer.
     l2Url: 'inputs/sif_increments/GOSIF_dSIF_clim_185.tif',
     l2Band: 3,
 
@@ -297,9 +307,18 @@
     gibsUrl: 'https://gibs-a.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
     time: null,                                  // null -> derived from year/doy
 
-    // Shared color scale (both SIF layers use the same ramp & domain).
+    // Layer 4 - Labels from MapTiler/OpenStreetMap API. This is reverse proxied through my
+    // personal site to avoid exposing my API key.
+    labelsUrl: 'https://www.jackiepi.xyz/tiles-4326/{z}/{x}/{y}.pbf',
+
+    // Color scale for Layer 1 (absolute SIF).
     domain: { min: 0.0, max: 0.6 },              // W m^-2 sr^-1 um^-1
     ticks: [0, 0.15, 0.30, 0.45, 0.60],
+
+    // Color scale for Layer 2 (SIF anomaly).  Symmetric about 0 so the
+    // diverging ramp's neutral midpoint lands on "no anomaly".
+    anomDomain: { min: -0.15, max: 0.15 },       // W m^-2 sr^-1 um^-1
+    anomTicks: [-0.15, -0.075, 0, 0.075, 0.15],
 
     // Study region  [west, south, east, north]  (lon/lat)
     region: [-111, 45, -106, 50],
@@ -364,16 +383,23 @@
   $('date-label').textContent = TIME;
   $('scene-label').textContent = `${CONFIG.year}-${pad3(CONFIG.doy)}`;
 
-  /* ---- shared color ramp ------------------------------------------- */
+  /* ---- color ramps -------------------------------------------------- */
+  // Build an interpolate expression that spreads NEO_DIV_VEG across [lo, hi].
+  function makeRamp(lo, hi){
+    const stops = [];
+    for (const [f, hex] of NEO_DIV_VEG) stops.push(lo + f * (hi - lo), hex);
+    return (valueExpr) => ['interpolate', ['linear'], valueExpr, ...stops];
+  }
   const { min: DMIN, max: DMAX } = CONFIG.domain;
-  // interpolate stops [value, color, value, color, ...] over the domain
-  const rampStops = [];
-  for (const [f, hex] of NEO_DIV_VEG) rampStops.push(DMIN + f * (DMAX - DMIN), hex);
-  const ramp = (valueExpr) => ['interpolate', ['linear'], valueExpr, ...rampStops];
+  const ramp = makeRamp(DMIN, DMAX);                    // Layer 1: absolute SIF
+
+  const { min: AMIN, max: AMAX } = CONFIG.anomDomain;
+  const anomRamp = makeRamp(AMIN, AMAX);                // Layer 2: SIF anomaly
 
   /* ==================================================================== *
-   *  LAYER 1 — GOSIF global (Int16, scale 1e-4, nodata >= 32766)          *
+   *  LAYER 1 — GOSIF global (Int16, scale 1e-4, nodata >= 32766)         *
    * ==================================================================== */
+  /*
   const l1Source = new ol.source.GeoTIFF({
     sources: [{ url: L1_URL, bands: [1] }],
     normalize: false,          // keep raw integers so we can compare to nodata & scale ourselves
@@ -393,33 +419,87 @@
   const dispL1 = ['*', rawL1, CONFIG.scaleL1];
   const l1Layer = new ol.layer.WebGLTile({
     source: l1Source,
-    style: { color: ['case', ['<', rawL1, CONFIG.nodataL1], ramp(dispL1), [0,0,0,0]] },
+    style: { color: ['case', ['<', rawL1, CONFIG.nodataL1], anomRamp(dispL1), [0,0,0,0]] },
   });
+  */
 
   /* ==================================================================== *
-   *  LAYER 2 — regional mean SIF (Float32 band 3, NaN nodata)             *
+   *  LAYER 2 — SIF anomaly = current SIF − regional mean SIF              *
+   *  The anomaly is computed in the browser and served as a single-band   *
+   *  GeoTIFF (band 1 = anomaly, NaN nodata).  We difference the two        *
+   *  rasters in JS rather than combining them as two bands in one OL       *
+   *  source, because OpenLayers requires every source in a combined        *
+   *  GeoTIFF to share tile origin AND internal tile layout — the global    *
+   *  GOSIF and the clim file satisfy neither.  A single source sidesteps   *
+   *  all of that.  Where either input is nodata the anomaly is NaN, so the *
+   *  in-range style test leaves it transparent and confined to the region. *
    * ==================================================================== */
-  const l2Source = new ol.source.GeoTIFF({
-    sources: [{ url: CONFIG.l2Url, bands: [CONFIG.l2Band] }],
-    normalize: false,
-    interpolate: false,
-    convertToRGB: false,
-    projection: 'EPSG:4326',
-    wrapX: false,
-    transition: 0,
-  });
-  l2Source.on('change', () => {
-    if (l2Source.getState() === 'error')
-      showError(`Couldn't read <b>Layer 2</b>: <code>${CONFIG.l2Url}</code> (band ${CONFIG.l2Band}). `
-        + `Check the path relative to this page.`);
+  const anomVal = ['band', 1];
+  const validL2 = ['all', ['>=', anomVal, -5], ['<=', anomVal, 5]];   // NaN fails → transparent
+  const l2Layer = new ol.layer.WebGLTile({
+    style: { color: ['case', validL2, anomRamp(anomVal), [0,0,0,0]] },
   });
 
-  // NaN fails every comparison, so an in-range test transparently rejects nodata.
-  const vL2   = ['band', 1];
-  const validL2 = ['all', ['>=', vL2, -1], ['<=', vL2, 5]];
-  const l2Layer = new ol.layer.WebGLTile({
-    source: l2Source,
-    style: { color: ['case', validL2, ramp(vL2), [0,0,0,0]] },
+  /* Build the anomaly raster in-browser with geotiff.js:
+       1. read the clim "mean SIF" band (l2Band of l2Url) over the region,
+       2. read the same window of current SIF out of the global GOSIF
+          (HTTP range requests — only the region window is fetched),
+       3. subtract, then re-emit a tiny region-aligned GeoTIFF blob. */
+  async function buildAnomalyBlob(){
+    const [w, s, e, n] = CONFIG.region;                  // [west, south, east, north]
+
+    // (1) climatological mean SIF — the clim file already covers just the region
+    const climImg = await (await GeoTIFF.fromUrl(CONFIG.l2Url)).getImage();
+    const width  = climImg.getWidth(), height = climImg.getHeight();
+    const [xres, yres] = climImg.getResolution().map(Math.abs);
+    const [mean] = await climImg.readRasters({ samples: [CONFIG.l2Band - 1] });
+
+    // (2) current SIF — crop the matching window out of the global GOSIF
+    const curImg = await (await GeoTIFF.fromUrl(L1_URL)).getImage();
+    const [gox, goy] = curImg.getOrigin();               // global top-left, e.g. [-180, 90]
+    const [grx, gry] = curImg.getResolution().map(Math.abs);
+    const left = Math.round((w - gox) / grx);
+    const top  = Math.round((goy - n) / gry);
+    const [cur] = await curImg.readRasters({
+      window: [left, top, left + width, top + height], samples: [0],
+    });
+
+    // (3) anomaly = current − mean, NaN where either input is nodata
+    const anom = new Float32Array(width * height);
+    for (let i = 0; i < anom.length; i++){
+      const c = cur[i], m = mean[i];
+      const cValid = c < CONFIG.nodataL1;                 // Int16 sentinel nodata
+      anom[i] = (cValid && Number.isFinite(m)) ? (c * CONFIG.scaleL1 - m) : NaN;
+    }
+    const ab = GeoTIFF.writeArrayBuffer(anom, {
+      width, height,
+      GeographicTypeGeoKey: 4326,                        // keep our ModelTiepoint (else lib forces global origin)
+      ModelPixelScale: [xres, yres, 0],
+      ModelTiepoint: [0, 0, 0, w, n, 0],                 // region top-left corner
+    });
+    return new Blob([ab]);
+  }
+
+  buildAnomalyBlob().then((anomBlob) => {
+    const l2Source = new ol.source.GeoTIFF({
+      sources: [{ blob: anomBlob, bands: [1] }],
+      normalize: false,
+      interpolate: false,
+      convertToRGB: false,
+      projection: 'EPSG:4326',
+      wrapX: false,
+      transition: 0,
+    });
+    l2Source.on('change', () => {
+      if (l2Source.getState() === 'error')
+        showError(`Couldn't render the <b>Layer 2</b> anomaly raster.`);
+    });
+    l2Layer.setSource(l2Source);
+    l2Layer.setVisible($('tg-l2').checked);              // honor the toggle's current state
+  }).catch((err) => {
+    showError(`Couldn't build the anomaly overlay from <code>${L1_URL}</code> and `
+      + `<code>${CONFIG.l2Url}</code> (<code>${err && err.message ? err.message : err}</code>). `
+      + `The server must serve these files with HTTP byte-range support.`);
   });
 
   // Footprint outline for the overlay patch (toggles with Layer 2).
@@ -464,12 +544,127 @@
     $('ro-src-txt').textContent && null; // non-fatal; basemap tiles for a date may be missing
   });
 
+  const labelStyleFunction = (feature) => {
+    const layer = feature.get('layer');
+
+    // Only show labels at appropriate zoom levels
+    const zoom = map.getView().getZoom();
+    if (!zoom) return undefined;
+
+    if (layer === 'boundary') {
+      // Handle state and country boundaries
+      if (feature.get('admin_level') === 4) {
+        if (zoom < 6) return undefined;
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: '#333',
+            width: 1.5,
+            lineDash: [4,3]
+          })
+        });
+      } else if (feature.get('admin_level') === 2) {
+        //if (zoom > 8) return undefined;
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: '#333',
+            width: 2,
+            lineDash: undefined
+          })
+        });
+      }
+    } else if (layer === 'waterway') {
+      console.log(feature.get('class'));
+      // if (feature.get('class') !== 'primary') return undefined;
+      return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: '#111e4e',
+            width: 2.5,
+            lineDash: undefined
+          })
+        });
+    } else if (layer === 'place') {
+      const name = feature.get('name:en');
+      const class_ = feature.get('class');
+
+      // Adjust font size and visibility based on place type and zoom
+      let fontSize = '14px';
+      let minZoom = 0;
+
+      switch (class_) {
+        case 'country':
+          fontSize = '16px';
+          minZoom = 2;
+          maxZoom = 12;
+          break;
+        case 'state':
+          fontSize = '16px';
+          minZoom = 6;
+          maxZoom = 12;
+          break;
+        case 'province':
+          fontSize = '16px';
+          minZoom = 6;
+          maxZoom = 12;
+          break;
+        default:
+          minZoom = 6;
+          maxZoom = 13;
+      }
+
+      if (zoom < minZoom) return undefined;
+      if (zoom > maxZoom) return undefined;
+
+      return new ol.style.Style({
+        text: new ol.style.Text({
+          text: name,
+          font: `${fontSize} 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif`,
+          fill: new ol.style.Fill({
+            color: '#000000'
+          }),
+          stroke: new ol.style.Stroke({
+            color: '#ffffff',
+            width: 3
+          }),
+          textAlign: 'center',
+          textBaseline: 'middle',
+          padding: [3, 3, 3, 3],
+          offsetX: 0,
+          offsetY: 0,
+          placement: 'point',
+          overflow: true,
+          maxAngle: 45,
+          scale: 1.0,
+        })
+      });
+    } else {
+      return undefined;
+    }
+  };
+
+  const labels = new ol.layer.VectorTile({
+    declutter: true,
+    source: new ol.source.VectorTile({
+        format: new ol.format.MVT(),
+        url: CONFIG.labelsUrl,
+        projection: 'EPSG:4326',
+        maxZoom: 18,
+        tileGrid: new ol.tilegrid.createXYZ({
+          extent: [-180, -90, 180, 90],
+          tileSize: 512,
+          maxResolution: 180 / 512,
+          maxZoom: 13,
+        })
+    }),
+    style: labelStyleFunction
+});
+
   /* ==================================================================== *
    *  MAP                                                                  *
    * ==================================================================== */
   const map = new ol.Map({
     target: 'map',
-    layers: [basemap, l1Layer, l2Layer, footprint],
+    // layers: [basemap, l1Layer, l2Layer, footprint],
+    layers: [basemap, l2Layer, footprint, labels],
     view: new ol.View({
       projection: 'EPSG:4326',
       center: [ (CONFIG.region[0]+CONFIG.region[2])/2, (CONFIG.region[1]+CONFIG.region[3])/2 ],
@@ -496,15 +691,16 @@
    *  UI — toggles, opacity, colorbar, readout                            *
    * ==================================================================== */
   // toggles
-  $('tg-l1').addEventListener('change', e => l1Layer.setVisible(e.target.checked));
+  // $('tg-l1').addEventListener('change', e => l1Layer.setVisible(e.target.checked));
   $('tg-l2').addEventListener('change', e => { l2Layer.setVisible(e.target.checked); footprint.setVisible(e.target.checked); });
   $('tg-l3').addEventListener('change', e => basemap.setVisible(e.target.checked));
+  $('tg-l4').addEventListener('change', e => labels.setVisible(e.target.checked));
 
-  // opacity (Layer 1)
-  const opIn = $('op-l1'), opOut = $('op-l1-out');
+  // opacity (Layer 2)
+  const opIn = $('op-l2'), opOut = $('op-l2-out');
   function syncOpacity(){
     const v = +opIn.value;
-    l1Layer.setOpacity(v/100);
+    l2Layer.setOpacity(v/100);
     opOut.textContent = v + '%';
     opIn.style.setProperty('--fill', v + '%');
   }
@@ -512,18 +708,18 @@
   syncOpacity();
 
   // swatches (min & max of ramp)
-  $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+  // $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
   $('sw-l2').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
 
   // colorbar gradient + ticks
   (function buildColorbar(){
     const stops = NEO_DIV_VEG.map(([f,hex]) => `${hex} ${(f*100).toFixed(1)}%`).join(', ');
     $('cb-bar').style.background = `linear-gradient(to top, ${stops})`;
-    const span = DMAX - DMIN, ticks = $('cb-ticks');
-    for (const t of CONFIG.ticks){
+    const span = AMAX - AMIN, ticks = $('cb-ticks');
+    for (const t of CONFIG.anomTicks){
       const el = document.createElement('div');
       el.className = 'cb-tick';
-      el.style.top = `${(1 - (t - DMIN)/span) * 100}%`;
+      el.style.top = `${(1 - (t - AMIN)/span) * 100}%`;
       el.textContent = t.toFixed(2);
       ticks.appendChild(el);
     }
@@ -534,15 +730,18 @@
         roSrc=$('ro-src'), roSrcTxt=$('ro-src-txt');
 
   function readAt(pixel){
-    // Prefer the overlay when it's visible & has a value here; else the global raster.
+    // Prefer the anomaly overlay when it's visible & has a value here; else the global raster.
     if (l2Layer.getVisible()){
       try {
-        const d = l2Layer.getData(pixel);
-        if (d && d.length){ const v = d[0];
-          if (Number.isFinite(v) && v > -1 && v < 5) return { v, src: 'Mean SIF (region)' };
+        const d = l2Layer.getData(pixel);          // [anomaly]
+        if (d && d.length){
+          const a = d[0];
+          if (Number.isFinite(a) && a > -5 && a < 5)
+            return { v: a, src: 'SIF anomaly (region)', anom: true };
         }
       } catch(_){}
     }
+    /*
     if (l1Layer.getVisible()){
       try {
         const d = l1Layer.getData(pixel);
@@ -552,6 +751,7 @@
         }
       } catch(_){}
     }
+    */
     return null;
   }
 
@@ -565,7 +765,10 @@
     roSrc.classList.add('live');
     roSrcTxt.textContent = r.src;
     if (r.nodata || r.v == null){ roVal.innerHTML = '<span style="color:var(--ink-dim)">nodata</span>'; }
-    else { roVal.innerHTML = r.v.toFixed(3) + '<span class="u">W m⁻² sr⁻¹ μm⁻¹</span>'; }
+    else {
+      const txt = r.anom && r.v >= 0 ? '+' + r.v.toFixed(3) : r.v.toFixed(3);
+      roVal.innerHTML = txt + '<span class="u">W m⁻² sr⁻¹ μm⁻¹</span>';
+    }
   });
   map.getViewport().addEventListener('mouseleave', () => {
     roLon.textContent=roLat.textContent='—'; roVal.innerHTML='—';
