@@ -129,6 +129,23 @@
   .sv-btn:hover{ border-color:var(--accent-dim); background:#121d24; }
   .sv-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
+  /* ---- date stepper -------------------------------------------------- */
+  .datenav{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .datenav .dn-btn{
+    appearance:none; width:34px; height:34px; flex:none;
+    background:#0e161c; color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; font:inherit; font-size:17px; font-weight:600; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color .15s ease, background .15s ease, opacity .15s ease;
+  }
+  .datenav .dn-btn:hover:not(:disabled){ border-color:var(--accent-dim); background:#121d24; }
+  .datenav .dn-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .datenav .dn-btn:disabled{ opacity:.3; cursor:default; }
+  .datenav .dn-face{ flex:1; text-align:center; }
+  .datenav .dn-date{ font-size:16px; font-weight:600; letter-spacing:.01em; }
+  .datenav .dn-scene{ font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+                      color:var(--ink-dim); margin-top:2px; }
+
   /* ---- colorbar (bottom-right, above attribution) -------------------- */
   #colorbar{ right:14px; bottom:64px; padding:12px 14px 10px; width:86px; }
   #colorbar .cb-title{ font-size:11px; font-weight:600; letter-spacing:.02em; }
@@ -211,7 +228,17 @@
   <section id="controls" class="sv-panel" aria-label="Layer controls">
     <!--div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div-->
     <h1>SIF Anomaly Viewer</h1>
-    <div class="sub"><span class="mono" id="scene-label">2017-185</span> · <span class="mono" id="date-label"></span></div>
+    <div class="sub">GOSIF 8-day composite · 2017</div>
+
+    <div class="datenav">
+      <button class="dn-btn" id="date-prev" aria-label="Previous 8-day period" title="Previous 8-day period">‹</button>
+      <div class="dn-face">
+        <div class="dn-date mono" id="date-label">2017-07-04</div>
+        <div class="dn-scene mono">Day of year <span id="scene-label">185</span></div>
+      </div>
+      <button class="dn-btn" id="date-next" aria-label="Next 8-day period" title="Next 8-day period">›</button>
+    </div>
+    <div class="sv-divider"></div>
 
     <!--div class="layer">
       <span class="swatch" id="sw-l1"></span>
@@ -288,6 +315,8 @@
    * ==================================================================== */
   const CONFIG = {
     // Layer 1 — global GOSIF raster.  File name is GOSIF_{year}{doy}.tif
+    //   `doy` is only the INITIAL scene; the date stepper walks the 8-day
+    //   compositing grid (DOY 1, 9, … 361) and rebuilds every layer per scene.
     year: 2017,
     doy:  185,                                   // -> data/gosif/GOSIF_2017185.tif
     l1Dir: 'data/gosif',
@@ -295,14 +324,14 @@
     nodataL1: 32766,                             // values >= this are nodata (covers 32766 & 32767)
 
     // Layer 2 — SIF anomaly = (current SIF) − (regional mean SIF).
-    //   l2Url band l2Band ("mean SIF") is the climatological mean.  The
-    //   current SIF comes from the global Layer-1 GOSIF.  Both are read and
-    //   differenced in-browser with geotiff.js (see buildAnomalyBlob), which
-    //   emits a single-band anomaly GeoTIFF for this layer.
-    l2Url: 'inputs/sif_increments/GOSIF_dSIF_clim_185.tif',
+    //   The climatology path is derived per-DOY (climUrlFor: GOSIF_dSIF_clim_{doy}.tif)
+    //   and its l2Band ("mean SIF") is the climatological mean.  The current SIF
+    //   comes from the global Layer-1 GOSIF.  Both are read and differenced
+    //   in-browser with geotiff.js (see buildAnomalyBlob), which emits a
+    //   single-band anomaly GeoTIFF for this layer.
     l2Band: 3,
 
-    // Layer 3 — NASA GIBS basemap.  TIME defaults to the DOY above; override if needed.
+    // Layer 3 — NASA GIBS basemap.  TIME tracks the displayed scene's date.
     gibsLayer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
     gibsUrl: 'https://gibs-a.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
     time: null,                                  // null -> derived from year/doy
@@ -372,16 +401,25 @@
 
   /* ---- derived config ---------------------------------------------- */
   const pad3 = (n) => String(n).padStart(3, '0');
-  const L1_URL = `${CONFIG.l1Dir}/GOSIF_${CONFIG.year}${pad3(CONFIG.doy)}.tif`;
+
+  // GOSIF 8-day compositing grid for the year: DOY 1, 9, 17, … 361 (46 scenes).
+  const DOY_STEP = 8, MIN_DOY = 1, MAX_DOY = 361;
+
+  // Every scene's file paths and WMTS time derive from the day-of-year.  The
+  // GOSIF raster is year-specific; the climatology file is keyed on DOY only.
+  const l1UrlFor   = (doy) => `${CONFIG.l1Dir}/GOSIF_${CONFIG.year}${pad3(doy)}.tif`;
+  const climUrlFor = (doy) => `inputs/sif_increments/GOSIF_dSIF_clim_${pad3(doy)}.tif`;
 
   function doyToISO(year, doy){
     const d = new Date(Date.UTC(year, 0, 1));
     d.setUTCDate(d.getUTCDate() + (doy - 1));
     return d.toISOString().slice(0, 10);
   }
-  const TIME = CONFIG.time || doyToISO(CONFIG.year, CONFIG.doy);
-  $('date-label').textContent = TIME;
-  $('scene-label').textContent = `${CONFIG.year}-${pad3(CONFIG.doy)}`;
+
+  // Mutable "currently displayed scene" state, driven by applyDate() below.
+  let currentDoy = CONFIG.doy;
+  let L1_URL     = l1UrlFor(currentDoy);   // referenced by error messages below
+  const TIME     = CONFIG.time || doyToISO(CONFIG.year, currentDoy);  // initial basemap time
 
   /* ---- color ramps -------------------------------------------------- */
   // Build an interpolate expression that spreads NEO_DIV_VEG across [lo, hi].
@@ -441,21 +479,21 @@
   });
 
   /* Build the anomaly raster in-browser with geotiff.js:
-       1. read the clim "mean SIF" band (l2Band of l2Url) over the region,
+       1. read the clim "mean SIF" band (l2Band of climUrlFor(doy)) over the region,
        2. read the same window of current SIF out of the global GOSIF
           (HTTP range requests — only the region window is fetched),
        3. subtract, then re-emit a tiny region-aligned GeoTIFF blob. */
-  async function buildAnomalyBlob(){
+  async function buildAnomalyBlob(doy){
     const [w, s, e, n] = CONFIG.region;                  // [west, south, east, north]
 
     // (1) climatological mean SIF — the clim file already covers just the region
-    const climImg = await (await GeoTIFF.fromUrl(CONFIG.l2Url)).getImage();
+    const climImg = await (await GeoTIFF.fromUrl(climUrlFor(doy))).getImage();
     const width  = climImg.getWidth(), height = climImg.getHeight();
     const [xres, yres] = climImg.getResolution().map(Math.abs);
     const [mean] = await climImg.readRasters({ samples: [CONFIG.l2Band - 1] });
 
     // (2) current SIF — crop the matching window out of the global GOSIF
-    const curImg = await (await GeoTIFF.fromUrl(L1_URL)).getImage();
+    const curImg = await (await GeoTIFF.fromUrl(l1UrlFor(doy))).getImage();
     const [gox, goy] = curImg.getOrigin();               // global top-left, e.g. [-180, 90]
     const [grx, gry] = curImg.getResolution().map(Math.abs);
     const left = Math.round((w - gox) / grx);
@@ -480,7 +518,8 @@
     return new Blob([ab]);
   }
 
-  buildAnomalyBlob().then((anomBlob) => {
+  // Wrap a freshly-built anomaly blob in a GeoTIFF source and hand it to Layer 2.
+  function applyAnomalyBlob(anomBlob){
     const l2Source = new ol.source.GeoTIFF({
       sources: [{ blob: anomBlob, bands: [1] }],
       normalize: false,
@@ -496,11 +535,7 @@
     });
     l2Layer.setSource(l2Source);
     l2Layer.setVisible($('tg-l2').checked);              // honor the toggle's current state
-  }).catch((err) => {
-    showError(`Couldn't build the anomaly overlay from <code>${L1_URL}</code> and `
-      + `<code>${CONFIG.l2Url}</code> (<code>${err && err.message ? err.message : err}</code>). `
-      + `The server must serve these files with HTTP byte-range support.`);
-  });
+  }
 
   // Footprint outline for the overlay patch (toggles with Layer 2).
   const footprint = new ol.layer.Vector({
@@ -513,9 +548,9 @@
   });
 
   /* ==================================================================== *
-   *  LAYER 3 — NASA GIBS WMTS basemap (EPSG:4326, 250m matrix set)        *
-   *  Tiled space: origin (-180, 90); level 0 = 2x1 512px tiles;           *
-   *  resolutions 0.5625 / 2^z deg/px for z = 0..8.                        *
+   *  LAYER 3 — NASA GIBS WMTS basemap (EPSG:4326, 250m matrix set)       *
+   *  Tiled space: origin (-180, 90); level 0 = 2x1 512px tiles;          *
+   *  resolutions 0.5625 / 2^z deg/px for z = 0..8.                       *
    * ==================================================================== */
   const gibsRes = [], gibsIds = [];
   for (let z = 0; z <= 8; z++) { gibsRes.push(0.5625 / Math.pow(2, z)); gibsIds.push(String(z)); }
@@ -573,7 +608,6 @@
         });
       }
     } else if (layer === 'waterway') {
-      console.log(feature.get('class'));
       // if (feature.get('class') !== 'primary') return undefined;
       return new ol.style.Style({
           stroke: new ol.style.Stroke({
@@ -706,6 +740,62 @@
   }
   opIn.addEventListener('input', syncOpacity);
   syncOpacity();
+
+  /* ---- date stepper -------------------------------------------------- *
+   *  Moving between scenes swaps three things in lock-step: the GOSIF     *
+   *  raster (year+DOY), the climatology file (DOY only), and the GIBS     *
+   *  basemap's WMTS TIME dimension (full ISO date).                       */
+  const datePrev = $('date-prev'), dateNext = $('date-next');
+  let dateGen = 0;                       // guards against out-of-order async rebuilds
+
+  function refreshDateUI(){
+    const iso = doyToISO(CONFIG.year, currentDoy);
+    $('date-label').textContent = iso;
+    $('scene-label').textContent = pad3(currentDoy);
+    datePrev.disabled = currentDoy <= MIN_DOY;
+    dateNext.disabled = currentDoy >= MAX_DOY;
+    return iso;
+  }
+
+  async function applyDate(doy){
+    doy = Math.max(MIN_DOY, Math.min(MAX_DOY, doy));
+    currentDoy = doy;
+    L1_URL = l1UrlFor(doy);
+    const gen = ++dateGen;
+    const iso = refreshDateUI();
+
+    // NASA GIBS basemap — swap the WMTS TIME dimension to match the scene.
+    const gibsSrc = basemap.getSource();
+    gibsSrc.setUrl(`${CONFIG.gibsUrl}?TIME=${iso}`);
+    gibsSrc.refresh();
+
+    // Rebuild the in-browser anomaly overlay (GOSIF − climatology) for this DOY.
+    const loading = $('loading');
+    if (loading) loading.style.display = 'flex';
+    try {
+      const blob = await buildAnomalyBlob(doy);
+      if (gen !== dateGen) return;       // a newer request superseded this one
+      applyAnomalyBlob(blob);
+    } catch (err) {
+      if (gen === dateGen)
+        showError(`Couldn't build the anomaly overlay from <code>${l1UrlFor(doy)}</code> and `
+          + `<code>${climUrlFor(doy)}</code> (<code>${err && err.message ? err.message : err}</code>). `
+          + `The server must serve these files with HTTP byte-range support.`);
+    } finally {
+      if (gen === dateGen && loading) loading.style.display = 'none';
+    }
+  }
+
+  const stepDate = (delta) => applyDate(currentDoy + delta * DOY_STEP);
+  datePrev.addEventListener('click', () => stepDate(-1));
+  dateNext.addEventListener('click', () => stepDate(+1));
+  window.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea, button')) return;
+    if (e.key === 'ArrowLeft')       stepDate(-1);
+    else if (e.key === 'ArrowRight') stepDate(+1);
+  });
+
+  applyDate(currentDoy);               // build the initial scene
 
   // swatches (min & max of ramp)
   // $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
