@@ -332,7 +332,7 @@
     l2Band: 3,
 
     // Layer 3 — NASA GIBS basemap.  TIME tracks the displayed scene's date.
-    gibsLayer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
+    gibsLayer: 'MODIS_Combined_L3_Nadir-BRDF_Daily',
     gibsUrl: 'https://gibs-a.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
     time: null,                                  // null -> derived from year/doy
 
@@ -559,7 +559,7 @@
     source: new ol.source.WMTS({
       url: `${CONFIG.gibsUrl}?TIME=${TIME}`,
       layer: CONFIG.gibsLayer,
-      matrixSet: '250m',
+      matrixSet: '500m',
       format: 'image/jpeg',
       style: 'default',
       projection: ol.proj.get('EPSG:4326'),
