@@ -1,6 +1,6 @@
 #!/bin/bash
 python -m venv flash-drought
-source venv/bin/activate
+source flash-drought/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 python -m ipykernel install --user --name=flash-drought --display-name "Python (flash-drought)"
