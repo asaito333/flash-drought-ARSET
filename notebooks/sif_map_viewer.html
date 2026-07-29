@@ -233,7 +233,7 @@
     <div class="datenav">
       <button class="dn-btn" id="date-prev" aria-label="Previous 8-day period" title="Previous 8-day period">‹</button>
       <div class="dn-face">
-        <div class="dn-date mono" id="date-label">2017-07-04</div>
+        <div class="dn-date mono" id="date-label">2017-05-17</div>
         <div class="dn-scene mono">Day of year <span id="scene-label">185</span></div>
       </div>
       <button class="dn-btn" id="date-next" aria-label="Next 8-day period" title="Next 8-day period">›</button>
@@ -260,8 +260,8 @@
 
     <div class="layer">
       <span class="swatch" id="sw-l3" style="background:linear-gradient(135deg,#3a6ea5,#7fae5a);"></span>
-      <div class="meta"><div class="name">Corrected Reflectance</div><div class="desc">Suomi NPP VIIRS</div></div>
-      <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle VIIRS basemap"><span class="track"></span><span class="knob"></span></label>
+      <div class="meta"><div class="name">Nadir BRDF-Adjusted Reflectance</div><div class="desc">Terra + Aqua MODIS NBAR</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle MODIS basemap"><span class="track"></span><span class="knob"></span></label>
     </div>
 
     <div class="layer">
@@ -293,7 +293,7 @@
   </aside>
 
   <div id="attrib">
-    <b>Imagery</b> NASA/GSFC/EOSDIS, Suomi NPP VIIRS<br>
+    <b>Imagery</b> NASA/GSFC/EOSDIS, Terra/Aqua MODIS<br>
     <b>SIF</b> GOSIF (Li &amp; Xiao)
   </div>
 
@@ -318,7 +318,7 @@
     //   `doy` is only the INITIAL scene; the date stepper walks the 8-day
     //   compositing grid (DOY 1, 9, … 361) and rebuilds every layer per scene.
     year: 2017,
-    doy:  185,                                   // -> data/gosif/GOSIF_2017185.tif
+    doy:  137,                                   // -> data/gosif/GOSIF_2017137.tif
     l1Dir: 'data/gosif',
     scaleL1: 0.0001,                             // stored Int16 -> W m^-2 sr^-1 um^-1
     nodataL1: 32766,                             // values >= this are nodata (covers 32766 & 32767)

@@ -39,29 +39,31 @@ Please email [Jacqueline Ryan](mailto:Jacqueline.Ryan@jpl.nasa.gov) at JPL for a
 
 ## Citations
 
-[1] Lisonbee, J., Woloszyn, M., Skumanich, M. (2021). Making sense of flash drought:
+[1] Lisonbee, J., Woloszyn, M., & Skumanich, M. (2021). Making sense of flash drought:
 definitions, indicators, and where we go from here. Journal of Applied and Service Climatology, 1, https://doi.org/10.46275/JOASC.2021.02.001
 
-[2] Christian, J. I., Hobbins, M., Hoell, A., Otkin, J. A., Ford, T. W., Cravens, A. E., Powlen, K. A., Wang, H., & Mishra, V. (2024). Flash drought: A state of the science review. WIREs Water, 11(3), e1714, https://doi.org/10.1002/wat2.1714
+[2] Christian, J. I., Hobbins, M., Hoell, A., et al. (2024). Flash drought: A state of the science review. WIREs Water, 11(3), e1714, https://doi.org/10.1002/wat2.1714
 
 [3] Mohammadi, K., Jiang, Y. & Wang, G. (2022). Flash drought early warning based on the trajectory of solar-induced chlorophyll fluorescence, Proc. Natl. Acad. Sci. U.S.A. 119 (32) e2202767119, https://doi.org/10.1073/pnas.2202767119
 
 [4] Mohammadi, K., & Wang, G. (2025). Impact Matters: Detection and Early Warning of Agriculturally Impactful Flash Droughts. Bull. Amer. Meteor. Soc., 106, E752–E769, https://doi.org/10.1175/BAMS-D-24-0143.1
 
-[5] He, M., Kimball, J. S., Yi, Y., et al. (2019). Impacts of the 2017 flash drought in the US Northern plains informed by satellite-based evapotranspiration and solar-induced fluorescence. Environ. Res. Lett., 14, https://doi.org/10.1088/1748-9326/ab22c3
+[5] Yoshida, Y., Joiner, J., Tucker, C., et al. (2015). The 2010 Russian drought impact on satellite measurements of solar-induced chlorophyll fluorescence: Insights from modeling and comparisons with parameters derived from satellite reflectances. Remote Sensing of Environment, 166, 163-177. https://doi.org/10.1016/j.rse.2015.06.008
 
-[6] Kimball, J. S., Jones, L., Jensco, K., He, M., Maneta, M. P., & Reichle, R. H. (2019). SMAP L4 Assessment of the US Northern Plains 2017 Flash Drought. International Geoscience and Remote Sensing Symposium (IGARSS), 5366-5369.
+[6] He, M., Kimball, J. S., Yi, Y., et al. (2019). Impacts of the 2017 flash drought in the US Northern plains informed by satellite-based evapotranspiration and solar-induced fluorescence. Environ. Res. Lett., 14, https://doi.org/10.1088/1748-9326/ab22c3
 
-[7] Sehgal, V., Gaur, N., & Mohanty, B. P. (2021). Global flash drought monitoring using surface soil moisture. Water Resources Research, 57, e2021WR029901, https://doi.org/10.1029/2021WR029901
+[7] Kimball, J. S., Jones, L., Jensco, K., He, M., Maneta, M. P., & Reichle, R. H. (2019). SMAP L4 Assessment of the US Northern Plains 2017 Flash Drought. International Geoscience and Remote Sensing Symposium (IGARSS), 5366-5369.
 
-[8] Brust, C., Kimball, J. S., Maneta, M. P., Jencso, K., He, M., & Reichle, R. H. (2021).
+[8] Sehgal, V., Gaur, N., & Mohanty, B. P. (2021). Global flash drought monitoring using surface soil moisture. Water Resources Research, 57, e2021WR029901, https://doi.org/10.1029/2021WR029901
+
+[9] Brust, C., Kimball, J. S., Maneta, M. P., Jencso, K., He, M., & Reichle, R. H. (2021).
 Using SMAP Level-4 soil moisture to constrain MOD16 evapotranspiration over the contiguous USA. Remote Sensing of Environment, 255, 112277, https://doi.org/10.1016/j.rse.2020.112277
 
-[9] Tang, S., Wang, S., Jiang, J., & Zheng, Y. (2026). Improved flash drought forecasting and attribution: A spatial-temporal causality-aware deep learning approach. Journal of Hydrology, 667, 134945, https://doi.org/10.1016/j.jhydrol.2026.134945
+[10] Tang, S., Wang, S., Jiang, J., & Zheng, Y. (2026). Improved flash drought forecasting and attribution: A spatial-temporal causality-aware deep learning approach. Journal of Hydrology, 667, 134945, https://doi.org/10.1016/j.jhydrol.2026.134945
 
-[10] Li, X. and Xiao, J. (2019). A global, 0.05-degree product of solar-induced chlorophyll fluorescence derived from OCO-2, MODIS, and reanalysis data. Remote Sensing, 11, 517. https://doi.org/10.3390/rs11050517
+[11] Li, X. & Xiao, J. (2019). A global, 0.05-degree product of solar-induced chlorophyll fluorescence derived from OCO-2, MODIS, and reanalysis data. Remote Sensing, 11, 517. https://doi.org/10.3390/rs11050517
 
-[11] Reichle, R., De Lannoy, G., Koster, R. D., Crow, W. T., Kimball, J. S., Liu, Q. & Bechtold, M. (2025). SMAP L4 Global 3-hourly 9 km EASE-Grid Surface and Root Zone Soil Moisture Geophysical Data. (SPL4SMGP, Version 8). [Data Set]. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/T5RUATAQREF8
+[12] Reichle, R., De Lannoy, G., Koster, R. D., Crow, W. T., Kimball, J. S., Liu, Q. & Bechtold, M. (2025). SMAP L4 Global 3-hourly 9 km EASE-Grid Surface and Root Zone Soil Moisture Geophysical Data. (SPL4SMGP, Version 8). [Data Set]. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/T5RUATAQREF8
 
 
 ## Data Sources and Attributions
