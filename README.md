@@ -56,8 +56,7 @@ definitions, indicators, and where we go from here. Journal of Applied and Servi
 
 [8] Sehgal, V., Gaur, N., & Mohanty, B. P. (2021). Global flash drought monitoring using surface soil moisture. Water Resources Research, 57, e2021WR029901, https://doi.org/10.1029/2021WR029901
 
-[9] Brust, C., Kimball, J. S., Maneta, M. P., Jencso, K., He, M., & Reichle, R. H. (2021).
-Using SMAP Level-4 soil moisture to constrain MOD16 evapotranspiration over the contiguous USA. Remote Sensing of Environment, 255, 112277, https://doi.org/10.1016/j.rse.2020.112277
+[9] Brust, C., Kimball, J. S., Maneta, M. P., Jencso, K., He, M., & Reichle, R. H. (2021). Using SMAP Level-4 soil moisture to constrain MOD16 evapotranspiration over the contiguous USA. Remote Sensing of Environment, 255, 112277, https://doi.org/10.1016/j.rse.2020.112277
 
 [10] Tang, S., Wang, S., Jiang, J., & Zheng, Y. (2026). Improved flash drought forecasting and attribution: A spatial-temporal causality-aware deep learning approach. Journal of Hydrology, 667, 134945, https://doi.org/10.1016/j.jhydrol.2026.134945
 
