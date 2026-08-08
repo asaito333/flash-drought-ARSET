@@ -64,6 +64,8 @@ definitions, indicators, and where we go from here. Journal of Applied and Servi
 
 [12] Reichle, R., De Lannoy, G., Koster, R. D., Crow, W. T., Kimball, J. S., Liu, Q. & Bechtold, M. (2025). SMAP L4 Global 3-hourly 9 km EASE-Grid Surface and Root Zone Soil Moisture Geophysical Data. (SPL4SMGP, Version 8). [Data Set]. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/T5RUATAQREF8
 
+[13] Martínez-Fernández, J., González-Zamora, A., Sánchez, N., & Gumuzzio, A. (2015). A soil water based index as a suitable agricultural drought indicator. Journal of Hydrology, 522, 265-273. https://doi.org/10.1016/j.jhydrol.2014.12.051
+
 
 ## Data Sources and Attributions
 

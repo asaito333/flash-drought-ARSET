@@ -1,12 +1,15 @@
-from datetime import datetime
 import gzip
 import math
 import os
 import shutil
+import warnings
+from datetime import datetime
 from urllib.parse import urljoin
 
+import earthaccess
 import requests
 from tqdm.notebook import tqdm
+
 
 def download_file(
         url: str,
@@ -229,3 +232,45 @@ def download_unpack_gosif(year: int,
     if verbose:
         print(f"Unpacked geotiff file: {gosif_geotiff}")
     return gosif_geotiff
+
+
+def download_model_constants(
+    output_dir: str = "data/smap_model_constants",
+) -> str:
+    """
+    Download the single SPL4SMLM land-model-constants granule.
+
+    The SWDI needs the field capacity and wilting point, which are not carried
+    in the SPL4SMGP soil moisture granules; they are static constants of the
+    Catchment land surface model shared by the whole SMAP L4 record.  The
+    SPL4SMLM collection therefore contains exactly one granule, which this
+    downloads (skipping the transfer if it is already present locally).
+
+    Arguments:
+        output_dir (str): Directory to store the granule in.  Created if absent.
+
+    Returns:
+        str: Path to the downloaded HDF-5 constants file.
+
+    Raises:
+        FileNotFoundError: If no HDF-5 granule was returned by the download.
+    """
+    expected_path = "data/smap_model_constants/SMAP_L4_SM_lmc_00000000T000000_Vv8011_001.h5"
+    if os.path.exists(expected_path):
+        return expected_path
+
+    auth = earthaccess.login()
+    if not auth.authenticated:
+        auth.login(strategy="interactive", persist=True)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    warnings.filterwarnings("ignore", "As of version 1.0*", FutureWarning)
+    results = earthaccess.search_data(short_name="SPL4SMLM")
+    downloaded = earthaccess.download(results, local_path=output_dir)
+
+    h5_files = [str(p) for p in downloaded if str(p).endswith(".h5")]
+    if not h5_files:
+        msg = f"No SPL4SMLM HDF-5 granule was downloaded to {output_dir}."
+        raise FileNotFoundError(msg)
+    return h5_files[0]
