@@ -11,11 +11,11 @@ This repository contains code the NASA ARSET course on Agricultural Flash Drough
 
 By the end of this course, you will learn how to:
 
-* Identify the various remote sensing data sources used for the detection and prediction of flash drought events.
-* Compare the advantages and limitations of different measurements to describe the ecological impacts of flash drought.
-* Use a Jupyter Notebook to generate a time series of flash drought detection indices using Solar-Induced Fluorescence (SIF) and Soil Moisture (SM) data.
-* Compare the effectiveness of different heuristics applied to flash drought detection indices in real-world scenarios.
-* Identify historical flash drought occurrences in regions around the world by generalizing the data-driven approach outlined in the Jupyter notebook exercises.
+* Identify the causes, risks and consequences of flash droughts as compared to slowly-evolving droughts.
+* Recognize how SIF data can be used for the detection and prediction of flash drought events.
+* Compare the advantages and limitations of SIF, soil moisture and meteorological data to detect the onset of flash drought.
+* Synthesize Solar-Induced Fluorescence Rapid Change Index (SIF-RCI) time series data for a selected region using a provided Jupyter Notebook.
+* Retrieve and manipulate SMAP Soil Moisture (SM) and land process model-based Soil Water Deficit Index (SWDI) time series, and compare with SIF-RCI time series data using a provided Jupyter Notebook.
 
 ## Common Questions
 
