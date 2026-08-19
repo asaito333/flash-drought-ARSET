@@ -66,6 +66,8 @@ definitions, indicators, and where we go from here. Journal of Applied and Servi
 
 [13] Martínez-Fernández, J., González-Zamora, A., Sánchez, N., & Gumuzzio, A. (2015). A soil water based index as a suitable agricultural drought indicator. Journal of Hydrology, 522, 265-273. https://doi.org/10.1016/j.jhydrol.2014.12.051
 
+[14] Malherbe, J., Moeletsi, M. E., Roffe, S. J., Beukes, P. J., & Masupha, T. E. (2025). The 2023/24 summer drought tracked by the Agricultural Drought Early Warning System (ADEWS) for South Africa. Environmental Development, 56, 101253. https://doi.org/10.1016/j.envdev.2025.101253
+
 
 ## Data Sources and Attributions
 
