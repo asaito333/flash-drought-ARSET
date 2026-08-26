@@ -166,9 +166,13 @@ def create_dask_cluster(
         n_workers: int = 8,
 ) -> tuple[Client, LocalCluster]:
 
-    if "client" in locals() and "cluster" in locals():
-        return (client, cluster) # type: ignore # noqa: F821
-    else:
+    # Reuse an existing local cluster if one is already running so repeated
+    # calls don't spin up (and leak) a new LocalCluster each time. Dask
+    # registers every Client as the global/default client, so querying for the
+    # current one tells us whether a cluster is already up.
+    try:
+        client = Client.current()
+    except ValueError:
         print("Creating new local Dask client")
         cluster = LocalCluster(
             n_workers=n_workers,
@@ -177,6 +181,9 @@ def create_dask_cluster(
 
         client = Client(cluster)
         return (client, cluster)
+    else:
+        print("Reusing existing local Dask client")
+        return (client, client.cluster) # type: ignore
 
 
 def silence_worker_warnings() -> None:
