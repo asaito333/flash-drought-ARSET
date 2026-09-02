@@ -92,7 +92,10 @@ definitions, indicators, and where we go from here. Journal of Applied and Servi
 
 [15] Malherbe, J., Moeletsi, M. E., Roffe, S. J., Beukes, P. J., & Masupha, T. E. (2025). The 2023/24 summer drought tracked by the Agricultural Drought Early Warning System (ADEWS) for South Africa. Environmental Development, 56, 101253. https://doi.org/10.1016/j.envdev.2025.101253
 
-[16] Osman, M., Zaitchik, B. F., Badr, H. S., Christian, J. I., Tadesse, T., Otkin, J. A., & Anderson, M. C. (2021). Flash drought onset over the contiguous United States: Sensitivity of inventories and trends to quantitative definitions. Hydrology and Earth System Sciences, 25(2), 565–581. https://doi.org/10.5194/hess-25-565-2021
+[16] Parazoo, N., Osman, M., Pascolini-Campbell, M., & Byrne, B. (2024). Antecedent conditions mitigate carbon loss during flash drought events. Geophysical Research Letters, 51, e2024GL108310. https://doi.org/10.1029/2024GL108310
+
+[17] Osman, M., Zaitchik, B. F., Badr, H. S., Christian, J. I., Tadesse, T., Otkin, J. A., & Anderson, M. C. (2021). Flash drought onset over the contiguous United States: Sensitivity of inventories and trends to quantitative definitions. Hydrology and Earth System Sciences, 25(2), 565–581. https://doi.org/10.5194/hess-25-565-2021
+
 
 
 ## Data Sources and Attributions
