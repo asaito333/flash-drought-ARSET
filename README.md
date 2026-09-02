@@ -17,17 +17,39 @@ By the end of this course, you will learn how to:
 * Synthesize Solar-Induced Fluorescence Rapid Change Index (SIF-RCI) time series data for a selected region using a provided Jupyter Notebook.
 * Retrieve and manipulate SMAP Soil Moisture (SM) and land process model-based Soil Water Deficit Index (SWDI) time series, and compare with SIF-RCI time series data using a provided Jupyter Notebook.
 
+## Installation
+
+1. **Download the course materials.** Click the green "Code" button at the top of this page, and select "Download ZIP" and unpack the zip wherever you like. Alternatively, you can clone this repository if you know how to do so.
+
+2. **Set up your NASA Earthdata account.** If you do not already have an account, go to [Earthdata Login](https://urs.earthdata.nasa.gov/) and create one. Remember the username and password you used.
+
+3. **Open Terminal (MacOS) or Powershell (Windows) and navigate to the `flash-drought-ARSET` directory where you unpacked the code.**
+
+4. **Run the setup script to install dependencies and open the Jupyter Notebook in a browser window.**
+* Anaconda users on Windows, run `.\setup-conda.ps1` in Powershell.
+* Python users on Windows, run `.\setup.ps1` in Powershell.
+* Anaconda users on MacOS/Linux, run `./setup-conda.sh` in Terminal.
+* Python users on MacOS/Linux, run `./setup.sh` in Terminal.
+
+If you would like to open the Jupyter Notebook on subsequent uses once your environment is set up, you can run the setup script again or run the following command in the `flash-drought-ARSET` directory:
+
+```bash
+jupyter lab notebooks/1_drought_indicators.ipynb
+```
+
+
 ## Common Questions
 
-### Why are there Python scripts in addition to the Jupyter Notebooks?
+### Why not use Google CoLab?
+Google CoLab is easy to set up and share but has limits on file storage and does not persist files between sessions unless set up to mount data on Google Drive. To avoid any unnecessary complexity with Google Drive storage, this notebook is intended to run locally on your computer.
 
+### Why are there Python scripts in addition to the Jupyter Notebooks?
 The code in the Jupyter notebooks in this course is designed to be focused around **conceptual understanding of the scientific technique** rather than implementation details of certain tasks. Helper functions, such as code for downloading data and rendering the interactive visualization, have been moved outside the notebook into standalone Python files.
 
 ### What is the Appendix notebook? Do I need to run it?
 Some steps involved in processing the data, such as producing SIF climatology or virtualizing terabytes of SMAP data, take a long time to run (>10 minutes) and require a fast internet connection. The `3_appendix.ipynb` notebook explains these steps in detail, but it has already been run for you and its outputs have been saved in the `notebooks/inputs/` directory. **You do not need to run this notebook to complete the course**, but you may wish to run it on your own if you want to experiment with the flash drought technique outside of the case studies we discuss.
 
 ### How do I use these notebooks for my own analysis?
-
 * All output files are saved to the `notebooks/data/` directory in GeoTIFF format for map-projected data, or CSV format for time series. If you prefer to use GIS software, the GeoTIFF files can readily be loaded into your application of choice.
 * **If you wish to use the technique from this course in your own region and time period of choice**, you will need to follow both the steps in the Appendix and the main two notebooks, replacing the date ranges and bounding box (bbox) coordinates with your own values where marked in the code cells. [A guide may be included to help with this process.]
 * **If you wish to do Near Real-Time (NRT) analysis with present data**, you will need to use a different SIF dataset other than GOSIF, e.g. [TROPOMI SIF](https://data-portal.s5p-pal.com/products/troposif.html), since GOSIF data are not updated on a timely cadence (only data through the end of 2024 are available as of the writing of this course). Likewise, the SMAP L4 virtual dataset that we use for deriving SWDI does not virtualize data past 2025, so you will need to use the Appendix notebook to virtualize more recent data. NASA's SMAP L4 collection has a 3-day latency.
@@ -69,6 +91,8 @@ definitions, indicators, and where we go from here. Journal of Applied and Servi
 [14] Martínez-Fernández, J., González-Zamora, A., Sánchez, N., & Gumuzzio, A. (2015). A soil water based index as a suitable agricultural drought indicator. Journal of Hydrology, 522, 265-273. https://doi.org/10.1016/j.jhydrol.2014.12.051
 
 [15] Malherbe, J., Moeletsi, M. E., Roffe, S. J., Beukes, P. J., & Masupha, T. E. (2025). The 2023/24 summer drought tracked by the Agricultural Drought Early Warning System (ADEWS) for South Africa. Environmental Development, 56, 101253. https://doi.org/10.1016/j.envdev.2025.101253
+
+[16] Osman, M., Zaitchik, B. F., Badr, H. S., Christian, J. I., Tadesse, T., Otkin, J. A., & Anderson, M. C. (2021). Flash drought onset over the contiguous United States: Sensitivity of inventories and trends to quantitative definitions. Hydrology and Earth System Sciences, 25(2), 565–581. https://doi.org/10.5194/hess-25-565-2021
 
 
 ## Data Sources and Attributions
