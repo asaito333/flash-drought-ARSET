@@ -1,4 +1,5 @@
 import csv
+import glob
 import logging
 import os
 import warnings
@@ -67,6 +68,7 @@ def write_step_geotiff(
         out_path: str,
         crs,
         transform,
+        dtype="float64",
 ) -> None:
     """Write a single-band raster grid to a georeferenced GeoTIFF."""
     with rasterio.open(
@@ -76,7 +78,7 @@ def write_step_geotiff(
         height=ras_grid.shape[0],
         width=ras_grid.shape[1],
         count=1,
-        dtype="float64",
+        dtype=dtype,
         crs=crs,
         transform=transform,
         nodata=np.nan,
@@ -204,6 +206,111 @@ def compute_sif_time_series(
         )
 
     return csv_path, len(dates)
+
+
+def detect_flash_drought_sif(
+        raster_dir: str,
+        output_dir: str,
+        time_series_csv: str,
+        threshold: float = -0.5,
+        n_steps: int = 3,
+) -> str:
+    """Flag per-cell flash drought from the SIF-RCI raster series.
+
+    Reads the "sif_rci_{year}_{month:02d}_{day:02d}.tif" rasters written by
+    :func:`compute_sif_time_series` and applies a rule to each grid cell: a
+    flash drought is detected at a time step when that step and the `n_steps`
+    - 1 immediately preceding steps all have a SIF-RCI value below `threshold`.
+    The chronological filename convention means a lexical sort of the rasters
+    is also a temporal sort.
+
+    One GeoTIFF is written per time step to `output_dir` (same filename with a
+    "fd_sifrci_" prefix), carrying the source raster's CRS and transform, where
+    1 marks a detection and 0 marks no detection. The earliest `n_steps` - 1
+    steps lack enough history to satisfy the rule and are therefore all 0.
+
+    The fraction of valid (non-NaN) grid cells flagged at each step is written
+    back into the existing `time_series_csv` as a new "fd_percent" column,
+    matched to each row by its date so it stays aligned with the other columns.
+
+    Arguments:
+        raster_dir (str): Directory holding the SIF-RCI GeoTIFFs.
+        output_dir (str): Directory to write the detection GeoTIFFs to.
+        time_series_csv (str): Path to the existing time series CSV (with a
+            leading "date" column) to add the "fd_percent" column to.
+        threshold (float): SIF-RCI value a cell must fall below to count toward
+            a detection.
+        n_steps (int): Number of consecutive steps (including the current one)
+            that must be below `threshold` to flag a detection.
+
+    Returns:
+        str: The output directory path.
+    """
+    paths = sorted(glob.glob(os.path.join(raster_dir, "sif_rci_*.tif")))
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Rolling buffer of the last `n_steps` "below threshold" masks so detection
+    # only needs each raster in memory once, not the whole stack.
+    recent_below: list[np.ndarray] = []
+    # Percent of valid cells flagged at each step, keyed by "%Y-%m-%d" date so
+    # it can be merged into the CSV by row rather than relying on row order.
+    fd_percent_by_date: dict[str, float] = {}
+
+    for path in paths:
+        with rasterio.open(path) as src:
+            rci_grid = src.read(1).astype("float64")
+            crs = src.crs
+            transform = src.transform
+
+        # NaN (water/ice/fill) compares False, so it never counts as a detection.
+        recent_below.append(rci_grid < threshold)
+        recent_below = recent_below[-n_steps:]
+
+        if len(recent_below) == n_steps:
+            detection = np.logical_and.reduce(recent_below)
+        else:
+            detection = np.zeros(rci_grid.shape, dtype=bool)
+
+        # Percent over valid land cells only; water/ice/fill (NaN) can never be
+        # flagged, so counting them would dilute the detection fraction.
+        n_valid = int(np.count_nonzero(~np.isnan(rci_grid)))
+        fd_percent = 100.0 * int(np.count_nonzero(detection)) / n_valid if n_valid else 0.0
+
+        # Reconstruct the "%Y-%m-%d" date from "sif_rci_{year}_{month}_{day}".
+        year, month, day = os.path.splitext(os.path.basename(path))[0].split("_")[-3:]
+        fd_percent_by_date[f"{year}-{month}-{day}"] = fd_percent
+
+        out_name = os.path.basename(path).replace("sif_rci_", "fd_sifrci_", 1)
+        out_path = os.path.join(output_dir, out_name)
+        write_step_geotiff(detection.astype("float32"), out_path, crs, transform, dtype="float32")
+
+    _add_fd_percent_column(time_series_csv, fd_percent_by_date)
+
+    return output_dir
+
+
+def _add_fd_percent_column(
+        time_series_csv: str,
+        fd_percent_by_date: dict[str, float],
+) -> None:
+    """Add an "fd_percent" column to an existing time series CSV.
+
+    Rows are matched to their detection percent by the leading "date" column so
+    the new values stay aligned with the existing rows regardless of order.
+    """
+    with open(time_series_csv, newline="") as f:
+        rows = list(csv.reader(f))
+
+    header, *data_rows = rows
+    header.append("fd_percent")
+    for row in data_rows:
+        fd_percent = fd_percent_by_date.get(row[0])
+        row.append(f"{fd_percent:.2f}" if fd_percent is not None else "")
+
+    with open(time_series_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(data_rows)
 
 
 # Change the number of workers to meet the capabilities of your own computer if needed
