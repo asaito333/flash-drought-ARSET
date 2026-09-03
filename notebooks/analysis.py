@@ -14,6 +14,7 @@ import zarr
 from dask.distributed import Client, LocalCluster
 from download import download_model_constants
 from pyproj import Transformer
+from rasterio.transform import from_origin
 from rasterio.windows import Window, from_bounds
 
 XarrayObj = TypeVar("XarrayObj", xr.Dataset, xr.DataArray)
@@ -61,12 +62,34 @@ def read_roi(path: str, read_window: Window) -> np.ndarray:
     return arr * GOSIF_SCALE_FACTOR
 
 
+def write_step_geotiff(
+        ras_grid: np.ndarray,
+        out_path: str,
+        crs,
+        transform,
+) -> None:
+    """Write a single-band raster grid to a georeferenced GeoTIFF."""
+    with rasterio.open(
+        out_path,
+        "w",
+        driver="GTiff",
+        height=ras_grid.shape[0],
+        width=ras_grid.shape[1],
+        count=1,
+        dtype="float64",
+        crs=crs,
+        transform=transform,
+        nodata=np.nan,
+    ) as dst:
+        dst.write(ras_grid, 1)
+
+
 def compute_rci(
         z_jy_grid: np.ndarray,
         z_prev_grid: np.ndarray,
         rci_prev_grid: np.ndarray
 ) -> np.ndarray:
-    """Compute the per grid cell SIF-RCI using the formula from above."""
+    """Compute the per grid cell SIF-RCI using the formula from notebook 1."""
     neg_anom = z_jy_grid < -0.75                  # Z(j,y) < -0.75       (case 1)
     pos_anom = z_jy_grid > 0.75                   # Z(j,y) >  0.75       (case 2)
     sign_change = (z_prev_grid * z_jy_grid) < 0   # Z(j-1,y)·Z(j,y) < 0  (case 3)
@@ -89,6 +112,7 @@ def compute_sif_time_series(
         south: float,
         east: float,
         north: float,
+        raster_dir: str | None = None,
 ) -> tuple[str, int]:
     prev_grid: np.ndarray | None = None
     # Initialize the arrays for the rows of our CSV
@@ -100,6 +124,16 @@ def compute_sif_time_series(
     rci_jy: list[float] = []
 
     read_window = get_read_window(gosif_geotiffs[0], west, south, east, north)
+
+    # Capture the CRS and windowed transform once so each per-step RCI grid can
+    # be written out as a georeferenced GeoTIFF aligned to the read window.
+    ras_crs = None
+    ras_transform = None
+    if raster_dir is not None:
+        os.makedirs(raster_dir, exist_ok=True)
+        with rasterio.open(gosif_geotiffs[0]) as src:
+            ras_crs = src.crs
+            ras_transform = src.window_transform(read_window)
 
     # Recursive state carried between time windows for RCI.
     # RCI(j0, y) = 0 and Z(j0, y) = 0 everywhere
@@ -136,6 +170,17 @@ def compute_sif_time_series(
 
         rci_masked = np.where(np.isnan(z_jy_grid), np.nan, rci_jy_grid)
 
+        # Optionally save the non-spatially-averaged RCI grid for this step.
+        # TO DO: I may make the write_step_geotiff function more modular to save
+        # the other metrics in other bands of the geotiff.
+        if raster_dir is not None:
+            date = dates[-1]
+            out_path = os.path.join(
+                raster_dir,
+                f"sif_rci_{date.year}_{date.month:02d}_{date.day:02d}.tif",
+            )
+            write_step_geotiff(rci_masked, out_path, ras_crs, ras_transform)
+
         # Compute the spatial average at the end
         sif_jy.append(float(np.nanmean(sif_grid)))
         mean_sif_j.append(float(np.nanmean(mean_sif_band)))
@@ -164,12 +209,14 @@ def compute_sif_time_series(
 # Change the number of workers to meet the capabilities of your own computer if needed
 def create_dask_cluster(
         n_workers: int = 8,
-) -> tuple[Client, LocalCluster]:
+) -> tuple[Client, LocalCluster, bool]:
 
     # Reuse an existing local cluster if one is already running so repeated
     # calls don't spin up (and leak) a new LocalCluster each time. Dask
     # registers every Client as the global/default client, so querying for the
-    # current one tells us whether a cluster is already up.
+    # current one tells us whether a cluster is already up. The returned flag
+    # reports whether we created the cluster, so callers know whether it is
+    # theirs to shut down.
     try:
         client = Client.current()
     except ValueError:
@@ -180,10 +227,10 @@ def create_dask_cluster(
             silence_logs=logging.ERROR)
 
         client = Client(cluster)
-        return (client, cluster)
+        return (client, cluster, True)
     else:
         print("Reusing existing local Dask client")
-        return (client, client.cluster) # type: ignore
+        return (client, client.cluster, False) # type: ignore
 
 
 def silence_worker_warnings() -> None:
@@ -192,8 +239,10 @@ def silence_worker_warnings() -> None:
         logging.getLogger(name).setLevel(logging.ERROR)
 
 
-def open_virtual_dataset(ref_url: str) -> xr.Dataset:
-    client, _ = create_dask_cluster()
+def open_virtual_dataset(
+        ref_url: str,
+) -> tuple[xr.Dataset, Client, LocalCluster, bool]:
+    client, cluster, created = create_dask_cluster()
     client.run(silence_worker_warnings)
 
     earthaccess.login()
@@ -209,7 +258,7 @@ def open_virtual_dataset(ref_url: str) -> xr.Dataset:
 
     store = zarr.storage.FsspecStore(fs, read_only=True) # type: ignore
     ds = xr.open_zarr(store, consolidated=False)
-    return ds
+    return ds, client, cluster, created
 
 
 def latlon_bbox_to_ease(
@@ -314,6 +363,23 @@ def load_field_capacity_wilting_point(
     return _select_bbox(field_capacity, bbox), _select_bbox(wilting_point, bbox)
 
 
+def ease2_grid_transform(x: np.ndarray, y: np.ndarray):
+    """Affine transform for a north-up EASE-Grid 2.0 raster from cell centers.
+
+    The SMAP L4 x/y coordinates are the cell centers (meters) of a regular
+    grid, so the pixel size is the coordinate spacing and the raster origin is
+    the outer corner of the north-west cell (half a pixel beyond the extreme
+    centers).  min/max are used so the transform is correct regardless of
+    whether x/y are stored ascending or descending; callers must orient the
+    array itself north-up (row 0 = northernmost row) to match.
+    """
+    xres = abs(float(x[1] - x[0]))
+    yres = abs(float(y[1] - y[0]))
+    west = float(x.min()) - xres / 2.0
+    north = float(y.max()) + yres / 2.0
+    return from_origin(west, north, xres, yres)
+
+
 def swdi_timeseries(
     ds: xr.Dataset,
     constants_path: str,
@@ -322,6 +388,7 @@ def swdi_timeseries(
     variable: str = "sm_rootzone",
     start: str | None = None,
     stop: str | None = None,
+    raster_dir: str | None = None,
 ) -> xr.DataArray:
     """Compute a box-averaged Soil Water Deficit Index (SWDI) time series.
     The SWDI is computed per cell and then spatially averaged over the bbox.
@@ -342,6 +409,11 @@ def swdi_timeseries(
             If None, begins at the start of the dataset.
         stop (str | None): Optional end date (e.g. "2019" or "2019-12-31"),
             inclusive. If None, runs to the end of the dataset.
+        raster_dir (str | None): Optional directory in which to save the
+            non-spatially-averaged per-cell SWDI grid for each time step as a
+            georeferenced GeoTIFF (EPSG:6933), named
+            "swdi_{year}_{month}_{day}.tif" (ordered so the files sort
+            chronologically).  If None, no rasters are written.
 
     Returns:
         xr.DataArray: A 1-D DataArray of the box-averaged SWDI indexed by time.
@@ -365,8 +437,40 @@ def swdi_timeseries(
 
     swdi = (sm - field_capacity) / (field_capacity - wilting_point) * 10.0
 
+    if raster_dir is not None:
+        # Writing the rasters already materialises the full (time, y, x) grid
+        # in memory, so reuse it for the spatial average instead of forcing a
+        # second (slow, network-bound) read of the virtualised dataset.
+        swdi = _save_swdi_rasters(swdi, raster_dir)
+
     # Average the SWDI (not the soil moisture) across the box.
     return swdi.mean(dim=("x", "y")).rename("swdi")
+
+
+def _save_swdi_rasters(swdi: xr.DataArray, raster_dir: str) -> xr.DataArray:
+    """Write each SWDI time step to a georeferenced GeoTIFF in `raster_dir`.
+
+    The grid is oriented north-up (y descending) so its rows match the affine
+    transform, then materialised once. The computed in-memory grid is returned
+    so the caller can spatially average it without re-reading the (virtualised,
+    network-bound) source data.
+    """
+    os.makedirs(raster_dir, exist_ok=True)
+
+    # Orient north-up (row 0 = northernmost) and materialise the lazy grid so
+    # every time step is computed a single time.
+    swdi = swdi.sortby("y", ascending=False).compute()
+    transform = ease2_grid_transform(swdi.x.values, swdi.y.values)
+
+    for step in swdi.transpose("time", "y", "x"):
+        date = step.time.values.astype("datetime64[s]").item()
+        out_path = os.path.join(
+            raster_dir,
+            f"swdi_{date.year}_{date.month:02d}_{date.day:02d}.tif",
+        )
+        write_step_geotiff(step.values, out_path, EASE2_GLOBAL_EPSG, transform)
+
+    return swdi
 
 
 def compute_swdi_timeseries(
@@ -374,12 +478,23 @@ def compute_swdi_timeseries(
         stop_date: str,
         time_series_fname: str,
         bbox: tuple[float, float, float, float],
-        ref_url: str = "https://its-live-data.s3-us-west-2.amazonaws.com/test-space/vds/SPL4SMGP.parquet"
+        ref_url: str = "https://its-live-data.s3-us-west-2.amazonaws.com/test-space/vds/SPL4SMGP.parquet",
+        raster_dir: str | None = None,
 ) -> str:
-    ds = open_virtual_dataset(ref_url)
     constants_path = download_model_constants()
-    swdi_ts = swdi_timeseries(ds, constants_path, bbox, start=start_date, stop=stop_date)
-    csv_path = os.path.join("data", time_series_fname)
+    ds, client, cluster, created = open_virtual_dataset(ref_url)
+    try:
+        swdi_ts = swdi_timeseries(
+            ds, constants_path, bbox,
+            start=start_date, stop=stop_date, raster_dir=raster_dir,
+        )
+        csv_path = os.path.join("data", time_series_fname)
 
-    swdi_ts.to_dataframe().to_csv(csv_path)
-    return csv_path
+        swdi_ts.to_dataframe().to_csv(csv_path)
+        return csv_path
+    finally:
+        # Only tear down the cluster if this workflow created it, so a client
+        # the user already had running isn't shut down out from under them.
+        if created:
+            client.close()
+            cluster.close()
