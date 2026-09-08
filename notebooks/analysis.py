@@ -289,6 +289,121 @@ def detect_flash_drought_sif(
     return output_dir
 
 
+def detect_flash_drought_swdi(
+        raster_dir: str,
+        output_dir: str,
+        time_series_csv: str,
+        drop_threshold: float = 2.0,
+        abs_threshold: float = -5.0,
+        n_lookback: int = 10,
+) -> str:
+    """Flag per-cell flash drought from the SWDI raster series.
+
+    Reads the "swdi_{year}_{month:02d}_{day:02d}.tif" rasters written by
+    :func:`_save_swdi_rasters` and applies two conditions to each grid cell:
+
+    1. The SWDI value has dropped by at least `drop_threshold` points over
+       the preceding `n_lookback` rasters (at a 3-day cadence, 10 rasters
+       ≈ 30 days).
+    2. The current SWDI value is at or below `abs_threshold`.
+
+    Once a cell is positively detected, it remains detected until its SWDI
+    rises above `abs_threshold`, at which point the cell reverts to a
+    no-detection state and both conditions must be freshly satisfied to
+    re-trigger.  The chronological filename convention means a lexical sort
+    is also a temporal sort.
+
+    One GeoTIFF is written per time step to `output_dir` (same filename with
+    a "fd_swdi_" prefix), carrying the source raster's CRS and transform,
+    where 1 marks a detection and 0 marks no detection.  The earliest
+    `n_lookback` steps lack enough history and are all 0.
+
+    The fraction of valid (non-NaN) grid cells flagged at each step is
+    written back into the existing `time_series_csv` as a new "fd_percent"
+    column, matched to each row by its date.
+
+    Arguments:
+        raster_dir (str): Directory holding the SWDI GeoTIFFs.
+        output_dir (str): Directory to write the detection GeoTIFFs to.
+        time_series_csv (str): Path to the existing time series CSV (with a
+            leading "date" column) to add the "fd_percent" column to.
+        drop_threshold (float): Minimum decrease in SWDI (in index points)
+            over the lookback window required to trigger a new detection.
+        abs_threshold (float): SWDI value a cell must be at or below to
+            satisfy condition 2, and to sustain an existing detection.
+        n_lookback (int): Number of preceding rasters over which the drop is
+            measured.  With a 3-day cadence, 10 rasters span 30 days.
+
+    Returns:
+        str: The output directory path.
+    """
+    paths = sorted(glob.glob(os.path.join(raster_dir, "swdi_*.tif")))
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Rolling buffer of n_lookback + 1 grids so that at step t the oldest
+    # entry is exactly n_lookback steps back and the newest is t, giving a
+    # drop window of n_lookback steps.
+    recent_grids: list[np.ndarray] = []
+    # Persistent detection mask carried forward between steps.
+    persistent_detection: np.ndarray | None = None
+    fd_percent_by_date: dict[str, float] = {}
+
+    for path in paths:
+        with rasterio.open(path) as src:
+            swdi_grid = src.read(1).astype("float64")
+            crs = src.crs
+            transform = src.transform
+
+        recent_grids.append(swdi_grid)
+        recent_grids = recent_grids[-(n_lookback + 1):]
+
+        # NaN comparisons evaluate to False, so water/fill cells never satisfy
+        # either condition and can never be flagged.
+        below_threshold = swdi_grid <= abs_threshold
+
+        if len(recent_grids) == n_lookback + 1:
+            # drop is negative when SWDI has fallen; rule1 is True when the
+            # magnitude of the fall meets the threshold.
+            drop = recent_grids[-1] - recent_grids[0]
+            rule1 = drop <= -drop_threshold
+            new_trigger = rule1 & below_threshold
+
+            if persistent_detection is None:
+                persistent_detection = new_trigger
+            else:
+                # Sustain existing detections that remain below the threshold;
+                # also admit cells that freshly satisfy both conditions.
+                persistent_detection = (persistent_detection | new_trigger) & below_threshold
+        else:
+            # Not enough history for a new trigger; sustain any prior
+            # detections as long as the threshold condition still holds.
+            if persistent_detection is None:
+                persistent_detection = np.zeros(swdi_grid.shape, dtype=bool)
+            else:
+                persistent_detection = persistent_detection & below_threshold
+
+        # Belt-and-suspenders NaN guard: fill cells should never appear as
+        # detections regardless of how the persistence mask evolves.
+        assert persistent_detection is not None
+        detection = np.where(np.isnan(swdi_grid), False, persistent_detection)
+
+        n_valid = int(np.count_nonzero(~np.isnan(swdi_grid)))
+        fd_percent = 100.0 * int(np.count_nonzero(detection)) / n_valid if n_valid else 0.0
+
+        year, month, day = os.path.splitext(os.path.basename(path))[0].split("_")[-3:]
+        fd_percent_by_date[f"{year}-{month}-{day}"] = fd_percent
+
+        out_name = os.path.basename(path).replace("swdi_", "fd_swdi_", 1)
+        out_path = os.path.join(output_dir, out_name)
+        write_step_geotiff(
+            detection.astype("float32"), out_path, crs, transform, dtype="float32"
+        )
+
+    _add_fd_percent_column(time_series_csv, fd_percent_by_date)
+
+    return output_dir
+
+
 def _add_fd_percent_column(
         time_series_csv: str,
         fd_percent_by_date: dict[str, float],
@@ -302,9 +417,15 @@ def _add_fd_percent_column(
         rows = list(csv.reader(f))
 
     header, *data_rows = rows
-    header.append("fd_percent")
+    overwrite = False
+    if "fd_percent" not in header:
+        header.append("fd_percent")
+    else:
+        overwrite = True
     for row in data_rows:
         fd_percent = fd_percent_by_date.get(row[0])
+        if overwrite:
+            row.pop()
         row.append(f"{fd_percent:.2f}" if fd_percent is not None else "")
 
     with open(time_series_csv, "w", newline="") as f:
