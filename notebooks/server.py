@@ -5,6 +5,11 @@ import re
 
 class RangeHandler(http.server.SimpleHTTPRequestHandler):
     """SimpleHTTPRequestHandler that supports HTTP Range (206), required by geotiff.js."""
+
+    def log_message(self, format, *args):
+        """Silence HTTP 200 and 206 logging"""
+        pass
+
     def send_head(self):
         path = self.translate_path(self.path)
         rng = self.headers.get("Range")

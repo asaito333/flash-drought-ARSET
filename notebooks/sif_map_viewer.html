@@ -351,6 +351,7 @@
 
     // Study region  [west, south, east, north]  (lon/lat)
     region: [-111, 45, -106, 50],
+    regionName: 'nplains',
   };
 
   // NEO diverging vegetation ramp (fraction of domain -> hex).
@@ -408,7 +409,8 @@
   // Every scene's file paths and WMTS time derive from the day-of-year.  The
   // GOSIF raster is year-specific; the climatology file is keyed on DOY only.
   const l1UrlFor   = (doy) => `${CONFIG.l1Dir}/GOSIF_${CONFIG.year}${pad3(doy)}.tif`;
-  const climUrlFor = (doy) => `inputs/sif_increments/GOSIF_dSIF_clim_${pad3(doy)}.tif`;
+  const climUrlFor = (doy) => `inputs/sif_increments_${CONFIG.regionName}/GOSIF_dSIF_clim_${pad3(doy)}.tif`;
+  console.log('hello, world');
 
   function doyToISO(year, doy){
     const d = new Date(Date.UTC(year, 0, 1));

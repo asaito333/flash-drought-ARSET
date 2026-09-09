@@ -122,6 +122,7 @@ def compute_sif_time_series(
     dates: list[datetime] = []
     sif_jy: list[float] = []
     mean_sif_j: list[float] = []
+    sif_zjy: list[float] = []
     z_jy: list[float] = []
     rci_jy: list[float] = []
 
@@ -163,7 +164,14 @@ def compute_sif_time_series(
             mean_dsif_band = clim_src.read(1).astype(float)
             std_dsif_band = clim_src.read(2).astype(float)
             mean_sif_band = clim_src.read(3).astype(float)
+            std_sif_band = clim_src.read(4).astype(float)
 
+        # IMPORTANT: In sif_zjy_grid, we get the Z-Score of SIF. This effectively summarizes
+        # the absolute SIF anomaly compared to climatology.
+        # zjy_grid is the "SIF Standardized Anomaly" used for calculating SIF-RCI, it is the
+        # Z-Score of the CHANGE in SIF between time steps. This summarizes the departure from
+        # phenological trend in the vegetation.
+        sif_zjy_grid = (sif_grid - mean_sif_band) / std_sif_band
         z_jy_grid = (dsif_grid - mean_dsif_band) / std_dsif_band
 
         rci_jy_grid = compute_rci(z_jy_grid, z_prev_grid, rci_prev_grid)
@@ -186,6 +194,7 @@ def compute_sif_time_series(
         # Compute the spatial average at the end
         sif_jy.append(float(np.nanmean(sif_grid)))
         mean_sif_j.append(float(np.nanmean(mean_sif_band)))
+        sif_zjy.append(float(np.nanmean(sif_zjy_grid)))
         z_jy.append(float(np.nanmean(z_jy_grid)))
         rci_jy.append(float(np.nanmean(rci_masked)))
 
@@ -193,13 +202,14 @@ def compute_sif_time_series(
     csv_path = os.path.join("data", time_series_fname)
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["date", "sif", "mean_sif", "zscore", "sif_rci"])
+        writer.writerow(["date", "sif", "mean_sif", "sif_zscore", "dsif_zscore", "sif_rci"])
         # We have 4 sig figs from the source data
         writer.writerows(
             zip(
                 [d.strftime("%Y-%m-%d") for d in dates],
                 [f"{sjy:.4f}" for sjy in sif_jy],
                 [f"{msj:.4f}" for msj in mean_sif_j],
+                [f"{szj:.4f}" for szj in sif_zjy],
                 [f"{zjy:.4f}" for zjy in z_jy],
                 [f"{rjy:.4f}" for rjy in rci_jy],
             )
