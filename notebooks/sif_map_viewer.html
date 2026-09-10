@@ -228,7 +228,7 @@
   <section id="controls" class="sv-panel" aria-label="Layer controls">
     <!--div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div-->
     <h1>SIF Anomaly Viewer</h1>
-    <div class="sub">GOSIF 8-day composite · 2017</div>
+    <div class="sub">GOSIF 8-day composite · <span id="sub-year">2017</span></div>
 
     <div class="datenav">
       <button class="dn-btn" id="date-prev" aria-label="Previous 8-day period" title="Previous 8-day period">‹</button>
@@ -333,7 +333,7 @@
 
     // Layer 3 — NASA GIBS basemap.  TIME tracks the displayed scene's date.
     gibsLayer: 'MODIS_Combined_L3_Nadir-BRDF_Daily',
-    gibsUrl: 'https://gibs-a.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
+    gibsUrl: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
     time: null,                                  // null -> derived from year/doy
 
     // Layer 4 - Labels from MapTiler/OpenStreetMap API. This is reverse proxied through my
@@ -353,6 +353,32 @@
     region: [-111, 45, -106, 50],
     regionName: 'nplains',
   };
+
+  /* ------------------------------------------------------------------ *
+   *  URL query-param overrides.  Any of `year`, `doy`, `regionName`,   *
+   *  or `region` (comma-separated west,south,east,north) present in    *
+   *  the query string overrides the matching CONFIG default.  This     *
+   *  runs before any derived config below is computed.                 *
+   *    e.g. ?year=2012&doy=185&regionName=nplains&region=-111,45,-106,50
+   * ------------------------------------------------------------------ */
+  (function applyUrlParams(){
+    const p = new URLSearchParams(window.location.search);
+
+    const year = parseInt(p.get('year'), 10);
+    if (Number.isFinite(year)) CONFIG.year = year;
+
+    const doy = parseInt(p.get('doy'), 10);
+    if (Number.isFinite(doy)) CONFIG.doy = doy;
+
+    const regionName = p.get('regionName');
+    if (regionName) CONFIG.regionName = regionName;
+
+    const region = p.get('region');
+    if (region){
+      const parts = region.split(',').map(Number);
+      if (parts.length === 4 && parts.every(Number.isFinite)) CONFIG.region = parts;
+    }
+  })();
 
   // NEO diverging vegetation ramp (fraction of domain -> hex).
   const NEO_DIV_VEG = [
@@ -408,9 +434,8 @@
 
   // Every scene's file paths and WMTS time derive from the day-of-year.  The
   // GOSIF raster is year-specific; the climatology file is keyed on DOY only.
-  const l1UrlFor   = (doy) => `${CONFIG.l1Dir}/GOSIF_${CONFIG.year}${pad3(doy)}.tif`;
+  const l1UrlFor   = (year, doy) => `${CONFIG.l1Dir}/GOSIF_${year}${pad3(doy)}.tif`;
   const climUrlFor = (doy) => `inputs/sif_increments_${CONFIG.regionName}/GOSIF_dSIF_clim_${pad3(doy)}.tif`;
-  console.log('hello, world');
 
   function doyToISO(year, doy){
     const d = new Date(Date.UTC(year, 0, 1));
@@ -419,8 +444,9 @@
   }
 
   // Mutable "currently displayed scene" state, driven by applyDate() below.
-  let currentDoy = CONFIG.doy;
-  let L1_URL     = l1UrlFor(currentDoy);   // referenced by error messages below
+  let currentYear = CONFIG.year;
+  let currentDoy  = CONFIG.doy;
+  let L1_URL      = l1UrlFor(currentYear, currentDoy);   // referenced by error messages below
   const TIME     = CONFIG.time || doyToISO(CONFIG.year, currentDoy);  // initial basemap time
 
   /* ---- color ramps -------------------------------------------------- */
@@ -485,7 +511,7 @@
        2. read the same window of current SIF out of the global GOSIF
           (HTTP range requests — only the region window is fetched),
        3. subtract, then re-emit a tiny region-aligned GeoTIFF blob. */
-  async function buildAnomalyBlob(doy){
+  async function buildAnomalyBlob(year, doy){
     const [w, s, e, n] = CONFIG.region;                  // [west, south, east, north]
 
     // (1) climatological mean SIF — the clim file already covers just the region
@@ -495,7 +521,7 @@
     const [mean] = await climImg.readRasters({ samples: [CONFIG.l2Band - 1] });
 
     // (2) current SIF — crop the matching window out of the global GOSIF
-    const curImg = await (await GeoTIFF.fromUrl(l1UrlFor(doy))).getImage();
+    const curImg = await (await GeoTIFF.fromUrl(l1UrlFor(year, doy))).getImage();
     const [gox, goy] = curImg.getOrigin();               // global top-left, e.g. [-180, 90]
     const [grx, gry] = curImg.getResolution().map(Math.abs);
     const left = Math.round((w - gox) / grx);
@@ -550,12 +576,12 @@
   });
 
   /* ==================================================================== *
-   *  LAYER 3 — NASA GIBS WMTS basemap (EPSG:4326, 250m matrix set)       *
+   *  LAYER 3 — NASA GIBS WMTS basemap (EPSG:4326, 500m matrix set)       *
    *  Tiled space: origin (-180, 90); level 0 = 2x1 512px tiles;          *
-   *  resolutions 0.5625 / 2^z deg/px for z = 0..8.                       *
+   *  resolutions 0.5625 / 2^z deg/px for z = 0..7.                       *
    * ==================================================================== */
   const gibsRes = [], gibsIds = [];
-  for (let z = 0; z <= 8; z++) { gibsRes.push(0.5625 / Math.pow(2, z)); gibsIds.push(String(z)); }
+  for (let z = 0; z <= 7; z++) { gibsRes.push(0.5625 / Math.pow(2, z)); gibsIds.push(String(z)); }
 
   const basemap = new ol.layer.Tile({
     source: new ol.source.WMTS({
@@ -751,18 +777,29 @@
   let dateGen = 0;                       // guards against out-of-order async rebuilds
 
   function refreshDateUI(){
-    const iso = doyToISO(CONFIG.year, currentDoy);
+    const iso = doyToISO(currentYear, currentDoy);
     $('date-label').textContent = iso;
     $('scene-label').textContent = pad3(currentDoy);
-    datePrev.disabled = currentDoy <= MIN_DOY;
-    dateNext.disabled = currentDoy >= MAX_DOY;
+    $('sub-year').textContent = currentYear;
+    // Both directions roll over across the year boundary, so the stepper is never disabled.
     return iso;
   }
 
-  async function applyDate(doy){
+  // Reflect the displayed scene in the URL (year/doy) so it can be shared /
+  // reloaded.  Existing params (region, regionName) are preserved.
+  function syncUrlParams(){
+    const p = new URLSearchParams(window.location.search);
+    p.set('year', currentYear);
+    p.set('doy',  currentDoy);
+    history.replaceState(null, '', `${window.location.pathname}?${p.toString()}${window.location.hash}`);
+  }
+
+  async function applyDate(year, doy){
     doy = Math.max(MIN_DOY, Math.min(MAX_DOY, doy));
-    currentDoy = doy;
-    L1_URL = l1UrlFor(doy);
+    currentYear = year;
+    currentDoy  = doy;
+    L1_URL = l1UrlFor(year, doy);
+    syncUrlParams();
     const gen = ++dateGen;
     const iso = refreshDateUI();
 
@@ -775,12 +812,12 @@
     const loading = $('loading');
     if (loading) loading.style.display = 'flex';
     try {
-      const blob = await buildAnomalyBlob(doy);
+      const blob = await buildAnomalyBlob(year, doy);
       if (gen !== dateGen) return;       // a newer request superseded this one
       applyAnomalyBlob(blob);
     } catch (err) {
       if (gen === dateGen)
-        showError(`Couldn't build the anomaly overlay from <code>${l1UrlFor(doy)}</code> and `
+        showError(`Couldn't build the anomaly overlay from <code>${l1UrlFor(year, doy)}</code> and `
           + `<code>${climUrlFor(doy)}</code> (<code>${err && err.message ? err.message : err}</code>). `
           + `The server must serve these files with HTTP byte-range support.`);
     } finally {
@@ -788,7 +825,16 @@
     }
   }
 
-  const stepDate = (delta) => applyDate(currentDoy + delta * DOY_STEP);
+  // Step one 8-day scene, rolling over the year boundary in either direction:
+  // past DOY 361 wraps to DOY 1 of the next year, and before DOY 1 wraps to
+  // DOY 361 of the previous year.
+  function stepDate(delta){
+    let year = currentYear;
+    let doy  = currentDoy + delta * DOY_STEP;
+    if (doy > MAX_DOY)      { year += 1; doy = MIN_DOY; }
+    else if (doy < MIN_DOY) { year -= 1; doy = MAX_DOY; }
+    applyDate(year, doy);
+  }
   datePrev.addEventListener('click', () => stepDate(-1));
   dateNext.addEventListener('click', () => stepDate(+1));
   window.addEventListener('keydown', (e) => {
@@ -797,7 +843,7 @@
     else if (e.key === 'ArrowRight') stepDate(+1);
   });
 
-  applyDate(currentDoy);               // build the initial scene
+  applyDate(currentYear, currentDoy);  // build the initial scene
 
   // swatches (min & max of ramp)
   // $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
