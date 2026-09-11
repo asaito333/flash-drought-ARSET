@@ -239,19 +239,19 @@
   <section id="controls" class="sv-panel" aria-label="Layer controls">
     <!--div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div-->
     <h1>Flash Drought Viewer</h1>
-    <div class="sub">SIF-RCI 8-day composite · <span id="sub-year">2017</span></div>
+    <div class="sub">3-day scene · <span id="sub-year">2017</span></div>
 
     <div class="datenav">
-      <button class="dn-btn" id="date-prev" aria-label="Previous 8-day period" title="Previous 8-day period">‹</button>
+      <button class="dn-btn" id="date-prev" aria-label="Previous 3-day period" title="Previous 3-day period">‹</button>
       <div class="dn-face">
-        <div class="dn-date mono" id="date-label">2017-05-17</div>
-        <div class="dn-scene mono">Day of year <span id="scene-label">185</span></div>
+        <div class="dn-date mono" id="date-label">2017-05-16</div>
+        <div class="dn-scene mono">Day of year <span id="scene-label">136</span></div>
       </div>
-      <button class="dn-btn" id="date-next" aria-label="Next 8-day period" title="Next 8-day period">›</button>
+      <button class="dn-btn" id="date-next" aria-label="Next 3-day period" title="Next 3-day period">›</button>
     </div>
 
     <div class="fd-stat" aria-live="polite">
-      <span class="fd-stat-label">Flash drought coverage</span>
+      <span class="fd-stat-label">Flash drought <span id="fd-pct-src">SIF-RCI</span></span>
       <span class="fd-stat-val mono" id="fd-pct">—</span>
     </div>
     <div class="sv-divider"></div>
@@ -275,6 +275,18 @@
     </div>
 
     <div class="layer">
+      <span class="swatch" id="sw-l5"></span>
+      <div class="meta"><div class="name">SWDI (region)</div><div class="desc">Soil Water Deficit Index · flash drought at full opacity</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l5" aria-label="Toggle regional SWDI overlay"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="opacity">
+      <label for="op-l5">Opacity</label>
+      <input type="range" id="op-l5" min="0" max="100" value="100" aria-label="SWDI layer opacity">
+      <output id="op-l5-out">100%</output>
+    </div>
+
+    <div class="layer">
       <span class="swatch" id="sw-l3" style="background:linear-gradient(135deg,#3a6ea5,#7fae5a);"></span>
       <div class="meta"><div class="name">Nadir BRDF-Adjusted Reflectance</div><div class="desc">Terra + Aqua MODIS NBAR</div></div>
       <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle MODIS basemap"><span class="track"></span><span class="knob"></span></label>
@@ -291,8 +303,8 @@
 
   <!-- Colorbar -->
   <aside id="colorbar" class="sv-panel" aria-hidden="true">
-    <div class="cb-title">SIF-RCI</div>
-    <div class="cb-unit mono">unitless</div>
+    <div class="cb-title" id="cb-title">SIF-RCI</div>
+    <div class="cb-unit mono" id="cb-unit">unitless</div>
     <div class="cb-body">
       <div class="cb-bar" id="cb-bar"></div>
       <div class="cb-ticks mono" id="cb-ticks"></div>
@@ -304,7 +316,7 @@
     <div class="ro-head">Cursor Readout</div>
     <div class="ro-row"><span class="k">Lon</span><span class="v mono" id="ro-lon">—</span></div>
     <div class="ro-row"><span class="k">Lat</span><span class="v mono" id="ro-lat">—</span></div>
-    <div class="ro-row"><span class="k">SIF-RCI</span><span class="v big mono" id="ro-val">—</span></div>
+    <div class="ro-row"><span class="k" id="ro-val-k">SIF-RCI</span><span class="v big mono" id="ro-val">—</span></div>
     <div class="ro-row"><span class="k">Flash drought</span><span class="v mono" id="ro-fd">—</span></div>
     <div class="ro-src" id="ro-src"><span class="dot"></span><span id="ro-src-txt">move cursor over map</span></div>
   </aside>
@@ -326,20 +338,22 @@
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/geotiff/dist-browser/geotiff.js"
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- proj4 — lets OpenLayers reproject the SWDI rasters (EPSG:6933) into the 4326 view -->
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
   /* ==================================================================== *
    *  CONFIG  —  edit paths / date / value range here                     *
    * ==================================================================== */
   const CONFIG = {
     // Layer 1 — SIF-RCI (Rapid Change Index).  One region-clipped, single-band
-    //   GeoTIFF per 8-day scene, loaded directly from
-    //   data/{regionName}_time_steps_{year}/sif_rci_{year}_{mm}_{dd}.tif.
+    //   GeoTIFF, loaded directly from
+    //   data/{regionName}_time_steps/sif_rci_{year}_{mm}_{dd}.tif.
     //   Values are unitless; nodata is NaN (no scaling or sentinel masking).
+    //   SIF-RCI is on an 8-day grid, coarser than the 3-day date stepper, so its
+    //   file lookup floors the scene's DOY to the nearest prior 8-day scene.
     year: 2017,
-    doy:  137,                                   // -> data/gosif/GOSIF_2017137.tif
-    l1Dir: 'data/gosif',
-    scaleL1: 0.0001,                             // stored Int16 -> W m^-2 sr^-1 um^-1
-    nodataL1: 32766,                             // values >= this are nodata (covers 32766 & 32767)
+    doy:  136,                                   // on the 3-day stepper grid ((doy-1) % 3 == 0)
 
     // Layer 2 — NASA GIBS basemap.  TIME tracks the displayed scene's date.
     gibsLayer: 'MODIS_Combined_L3_Nadir-BRDF_Daily',
@@ -358,6 +372,11 @@
     // ramp's neutral midpoint lands on "no change".
     rciDomain: { min: -3, max: 3 },              // unitless
     rciTicks: [-3, -1.5, 0, 1.5, 3],
+
+    // Color scale for the SWDI layer.  Runs 0 (no deficit → green end of the
+    // ramp) down to -10 (severe deficit → red end).  Unitless; nodata is NaN.
+    swdiDomain: { min: -10, max: 0 },            // unitless
+    swdiTicks: [0, -2.5, -5, -7.5, -10],
 
     // Study region  [west, south, east, north]  (lon/lat)
     region: [-111, 45, -106, 50],
@@ -436,16 +455,31 @@
     throw new Error('OpenLayers failed to load');
   }
 
+  // Register EPSG:6933 (NSIDC EASE-Grid 2.0 Global) so OpenLayers can reproject
+  // the SWDI rasters — which are stored in that projected CRS — into the
+  // EPSG:4326 map view.  SIF-RCI is already 4326 and needs no transform.
+  if (typeof proj4 !== 'undefined' && ol.proj.proj4) {
+    proj4.defs('EPSG:6933',
+      '+proj=cea +lat_ts=30 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs');
+    ol.proj.proj4.register(proj4);
+  }
+
   /* ---- derived config ---------------------------------------------- */
   const pad3 = (n) => String(n).padStart(3, '0');
 
-  // GOSIF 8-day compositing grid for the year: DOY 1, 9, 17, … 361 (46 scenes).
-  const DOY_STEP = 8, MIN_DOY = 1, MAX_DOY = 361;
+  // The date stepper advances by whole calendar days, so it rolls across year
+  // boundaries continuously (e.g. Dec 30 + 3 days → Jan 02) to match the SWDI
+  // rasters' continuous 3-day cadence, rather than resetting to Jan 01.
+  const DOY_STEP = 3;
 
-  // One SIF-RCI GeoTIFF per scene, keyed on the scene's calendar date:
+  // SIF-RCI is on a coarser 8-day grid (DOY 1, 9, 17, … 361).  Floor the scene's
+  // DOY to the nearest prior 8-day composite so a file exists for the date.
+  const rciSnapDoy = (doy) => Math.min(361, Math.floor((doy - 1) / 8) * 8 + 1);
+
+  // One SIF-RCI GeoTIFF, keyed on the floored (prior) 8-day scene's date:
   //   data/{regionName}_time_steps/sif_rci_{year}_{mm}_{dd}.tif
   const rciUrlFor = (year, doy) => {
-    const [y, m, d] = doyToISO(year, doy).split('-');
+    const [y, m, d] = doyToISO(year, rciSnapDoy(doy)).split('-');
     return `data/${CONFIG.regionName}_time_steps/sif_rci_${y}_${m}_${d}.tif`;
   };
 
@@ -453,8 +487,23 @@
   // as the matching SIF-RCI raster:
   //   data/{regionName}_fd/fd_sifrci_{year}_{mm}_{dd}.tif
   const fdUrlFor = (year, doy) => {
-    const [y, m, d] = doyToISO(year, doy).split('-');
+    const [y, m, d] = doyToISO(year, rciSnapDoy(doy)).split('-');
     return `data/${CONFIG.regionName}_fd/fd_sifrci_${y}_${m}_${d}.tif`;
+  };
+
+  // SWDI shares the 3-day stepper grid, so it uses the scene's DOY directly.
+  // SWDI raster (0 → -10, unitless, NaN nodata), EPSG:6933:
+  //   data/{regionName}_time_steps/swdi_{year}_{mm}_{dd}.tif
+  const swdiUrlFor = (year, doy) => {
+    const [y, m, d] = doyToISO(year, doy).split('-');
+    return `data/${CONFIG.regionName}_time_steps/swdi_${y}_${m}_${d}.tif`;
+  };
+
+  // SWDI flash-drought mask (1 = detection, 0 = none), on the SAME grid as SWDI:
+  //   data/{regionName}_fd/fd_swdi_{year}_{mm}_{dd}.tif
+  const fdSwdiUrlFor = (year, doy) => {
+    const [y, m, d] = doyToISO(year, doy).split('-');
+    return `data/${CONFIG.regionName}_fd/fd_swdi_${y}_${m}_${d}.tif`;
   };
 
   function doyToISO(year, doy){
@@ -480,6 +529,9 @@
 
   const { min: RMIN, max: RMAX } = CONFIG.rciDomain;
   const rciRamp = makeRamp(RMIN, RMAX);                 // Layer 2: SIF-RCI
+
+  const { min: SMIN, max: SMAX } = CONFIG.swdiDomain;
+  const swdiRamp = makeRamp(SMIN, SMAX);               // SWDI layer
 
   /* ==================================================================== *
    *  LAYER 1 — SIF-RCI (Rapid Change Index), flash-drought highlighted   *
@@ -530,6 +582,58 @@
           resolve();
         } else if (state === 'error'){
           reject(new Error(`${rciUrl} / ${fdUrl}`));
+        }
+      });
+    });
+  }
+
+  /* ==================================================================== *
+   *  SWDI LAYER — Soil Water Deficit Index, flash-drought highlighted    *
+   *  Same design as the SIF-RCI layer (band 1 = SWDI, band 2 = its FD     *
+   *  mask), but the rasters are stored in EPSG:6933 at a coarser grid, so *
+   *  OpenLayers reprojects them into the 4326 view.  Detected cells       *
+   *  render at full opacity, cells with no detection at 25%.  Because     *
+   *  reprojection can blend the 0/1 mask at edges, the detection test     *
+   *  uses a 0.5 threshold rather than exact equality.                     *
+   * ==================================================================== */
+  const swdiVal   = ['band', 1];
+  const swdiFdVal = ['band', 2];                                     // 1 = flash drought, 0 = none
+  const validSwdi = ['all', ['>=', swdiVal, -1e6], ['<=', swdiVal, 1e6]]; // NaN fails → transparent
+  const swdiFdAlpha = ['case', ['>=', swdiFdVal, 0.5], 1.0, 0.25];   // highlight detections
+  const swdiLayer = new ol.layer.WebGLTile({
+    visible: false,                                                  // opt-in overlay
+    style: {
+      color: ['case',
+        validSwdi, ['*', swdiRamp(swdiVal), ['color', 255, 255, 255, swdiFdAlpha]],
+        [0, 0, 0, 0]],
+    },
+  });
+
+  // Point the SWDI layer at its raster (band 1) + FD mask (band 2) for a scene.
+  function loadSwdi(year, doy){
+    const swdiUrl = swdiUrlFor(year, doy);
+    const fdUrl   = fdSwdiUrlFor(year, doy);
+    return new Promise((resolve, reject) => {
+      const src = new ol.source.GeoTIFF({
+        sources: [
+          { url: swdiUrl, bands: [1] },
+          { url: fdUrl,   bands: [1] },
+        ],
+        normalize: false,
+        interpolate: false,
+        convertToRGB: false,
+        projection: 'EPSG:6933',                     // reprojected into the 4326 view by OL
+        wrapX: false,
+        transition: 0,
+      });
+      src.on('change', () => {
+        const state = src.getState();
+        if (state === 'ready'){
+          swdiLayer.setSource(src);
+          swdiLayer.setVisible($('tg-l5').checked);  // honor the toggle's current state
+          resolve();
+        } else if (state === 'error'){
+          reject(new Error(`${swdiUrl} / ${fdUrl}`));
         }
       });
     });
@@ -696,7 +800,7 @@
   const map = new ol.Map({
     target: 'map',
     // layers: [basemap, l1Layer, l2Layer, footprint],
-    layers: [basemap, l2Layer, footprint, labels],
+    layers: [basemap, l2Layer, swdiLayer, footprint, labels],
     view: new ol.View({
       projection: 'EPSG:4326',
       center: [ (CONFIG.region[0]+CONFIG.region[2])/2, (CONFIG.region[1]+CONFIG.region[3])/2 ],
@@ -722,13 +826,46 @@
   /* ==================================================================== *
    *  UI — toggles, opacity, colorbar, readout                            *
    * ==================================================================== */
+  /* Per-raster display metadata for the two flash-drought overlays.  Drives the
+     shared colorbar, the coverage stat, and the cursor readout so both layers
+     reuse the same UI. */
+  const RASTER_INFO = {
+    rci:  { layer: l2Layer,   name: 'SIF-RCI', unit: 'unitless',
+            min: RMIN, max: RMAX, ticks: CONFIG.rciTicks,  maskUrlFor: fdUrlFor,     decimals: 3, signed: true },
+    swdi: { layer: swdiLayer, name: 'SWDI',    unit: 'unitless',
+            min: SMIN, max: SMAX, ticks: CONFIG.swdiTicks, maskUrlFor: fdSwdiUrlFor, decimals: 2, signed: false },
+  };
+  // Topmost visible overlay drives the shared UI panels; SWDI sits above SIF-RCI.
+  function activeRaster(){
+    if (swdiLayer.getVisible()) return 'swdi';
+    if (l2Layer.getVisible())   return 'rci';
+    return null;
+  }
+
   // toggles
   // $('tg-l1').addEventListener('change', e => l1Layer.setVisible(e.target.checked));
-  $('tg-l2').addEventListener('change', e => { l2Layer.setVisible(e.target.checked); footprint.setVisible(e.target.checked); });
+  $('tg-l2').addEventListener('change', e => {
+    l2Layer.setVisible(e.target.checked);
+    footprint.setVisible(e.target.checked);
+    updateColorbar(activeRaster() || 'rci');
+    refreshCoverage();
+  });
   $('tg-l3').addEventListener('change', e => basemap.setVisible(e.target.checked));
   $('tg-l4').addEventListener('change', e => labels.setVisible(e.target.checked));
+  $('tg-l5').addEventListener('change', async e => {
+    const on = e.target.checked;
+    swdiLayer.setVisible(on);
+    updateColorbar(activeRaster() || 'rci');
+    refreshCoverage();
+    if (on){                                   // lazy-load the overlay on first enable
+      const loading = $('loading'); if (loading) loading.style.display = 'flex';
+      try { await loadSwdi(currentYear, currentDoy); }
+      catch (err){ showSwdiError(err); }
+      finally { if (loading) loading.style.display = 'none'; }
+    }
+  });
 
-  // opacity (Layer 2)
+  // opacity (SIF-RCI)
   const opIn = $('op-l2'), opOut = $('op-l2-out');
   function syncOpacity(){
     const v = +opIn.value;
@@ -739,10 +876,28 @@
   opIn.addEventListener('input', syncOpacity);
   syncOpacity();
 
+  // opacity (SWDI)
+  const opIn5 = $('op-l5'), opOut5 = $('op-l5-out');
+  function syncOpacity5(){
+    const v = +opIn5.value;
+    swdiLayer.setOpacity(v/100);
+    opOut5.textContent = v + '%';
+    opIn5.style.setProperty('--fill', v + '%');
+  }
+  opIn5.addEventListener('input', syncOpacity5);
+  syncOpacity5();
+
+  function showSwdiError(err){
+    showError(`Couldn't load the SWDI raster <code>${swdiUrlFor(currentYear, currentDoy)}</code> `
+      + `or its flash-drought mask <code>${fdSwdiUrlFor(currentYear, currentDoy)}</code> `
+      + `(<code>${err && err.message ? err.message : err}</code>). `
+      + `Note the <b>${CONFIG.regionName}</b> region may not have an <code>fd_swdi</code> set.`);
+  }
+
   /* ---- date stepper -------------------------------------------------- *
-   *  Moving between scenes swaps three things in lock-step: the GOSIF     *
-   *  raster (year+DOY), the climatology file (DOY only), and the GIBS     *
-   *  basemap's WMTS TIME dimension (full ISO date).                       */
+   *  The stepper walks a 3-day grid.  Each scene swaps the overlays (SIF- *
+   *  RCI floored to its 8-day grid, SWDI on the native 3-day grid) and    *
+   *  the GIBS basemap's WMTS TIME dimension (full ISO date), in lock-step.*/
   const datePrev = $('date-prev'), dateNext = $('date-next');
   let dateGen = 0;                       // guards against out-of-order async rebuilds
 
@@ -764,31 +919,37 @@
     history.replaceState(null, '', `${window.location.pathname}?${p.toString()}${window.location.hash}`);
   }
 
-  // Scene-wide flash-drought coverage: share of valid (non-NaN) mask pixels
-  // flagged as a detection.  Reads the mask GeoTIFF directly with geotiff.js
-  // (the browser HTTP cache dedupes this with the OL source's own fetch).
-  async function updateFdCoverage(year, doy, gen){
-    const pctEl = $('fd-pct');
+  // Scene-wide flash-drought coverage for the ACTIVE overlay: share of valid
+  // (non-NaN) mask pixels flagged as a detection.  Reads the mask GeoTIFF
+  // directly with geotiff.js (raw, unreprojected — so values are exact 0/1;
+  // the browser HTTP cache dedupes this with the OL source's own fetch).
+  let covGen = 0;
+  async function refreshCoverage(){
+    const gen = ++covGen;
+    const key = activeRaster();
+    const srcEl = $('fd-pct-src'), pctEl = $('fd-pct');
+    if (!key){ srcEl.textContent = ''; pctEl.textContent = '—'; return; }
+    const info = RASTER_INFO[key];
+    srcEl.textContent = info.name;
     pctEl.textContent = '…';
     try {
-      const img = await (await GeoTIFF.fromUrl(fdUrlFor(year, doy))).getImage();
+      const img = await (await GeoTIFF.fromUrl(info.maskUrlFor(currentYear, currentDoy))).getImage();
       const [fd] = await img.readRasters();
       let detected = 0, valid = 0;
       for (let i = 0; i < fd.length; i++){
         const v = fd[i];
         if (!Number.isFinite(v)) continue;   // NaN = outside region / nodata
         valid++;
-        if (v === 1) detected++;
+        if (v >= 0.5) detected++;
       }
-      if (gen !== dateGen) return;           // a newer scene superseded this one
+      if (gen !== covGen) return;            // a newer request superseded this one
       pctEl.textContent = valid ? (detected / valid * 100).toFixed(1) + '%' : '—';
     } catch(_){
-      if (gen === dateGen) pctEl.textContent = '—';
+      if (gen === covGen) pctEl.textContent = '—';
     }
   }
 
   async function applyDate(year, doy){
-    doy = Math.max(MIN_DOY, Math.min(MAX_DOY, doy));
     currentYear = year;
     currentDoy  = doy;
     syncUrlParams();
@@ -800,10 +961,10 @@
     gibsSrc.setUrl(`${CONFIG.gibsUrl}?TIME=${iso}`);
     gibsSrc.refresh();
 
-    // Recompute the scene-wide flash-drought coverage (independent of the overlay).
-    updateFdCoverage(year, doy, gen);
+    // Recompute coverage for whichever overlay is on top right now.
+    refreshCoverage();
 
-    // Swap the SIF-RCI overlay to this scene's GeoTIFF.
+    // Swap the overlays to this scene's GeoTIFFs (SWDI only if it's enabled).
     const loading = $('loading');
     if (loading) loading.style.display = 'flex';
     try {
@@ -815,19 +976,27 @@
           + `or its flash-drought mask <code>${fdUrlFor(year, doy)}</code> `
           + `(<code>${err && err.message ? err.message : err}</code>). `
           + `The server must serve these files with HTTP byte-range support.`);
+    }
+    try {
+      if (swdiLayer.getVisible()){
+        await loadSwdi(year, doy);
+        if (gen !== dateGen) return;
+      }
+    } catch (err) {
+      if (gen === dateGen) showSwdiError(err);
     } finally {
       if (gen === dateGen && loading) loading.style.display = 'none';
     }
   }
 
-  // Step one 8-day scene, rolling over the year boundary in either direction:
-  // past DOY 361 wraps to DOY 1 of the next year, and before DOY 1 wraps to
-  // DOY 361 of the previous year.
+  // Step one scene by advancing the calendar date ±3 days.  Working in real
+  // dates (rather than wrapping the DOY) makes year boundaries continuous: the
+  // step after Dec 30 is Jan 02 of the next year, matching the SWDI cadence.
   function stepDate(delta){
-    let year = currentYear;
-    let doy  = currentDoy + delta * DOY_STEP;
-    if (doy > MAX_DOY)      { year += 1; doy = MIN_DOY; }
-    else if (doy < MIN_DOY) { year -= 1; doy = MAX_DOY; }
+    const d = new Date(Date.UTC(currentYear, 0, 1));
+    d.setUTCDate(d.getUTCDate() + (currentDoy - 1) + delta * DOY_STEP);
+    const year = d.getUTCFullYear();
+    const doy  = Math.round((d.getTime() - Date.UTC(year, 0, 1)) / 86400000) + 1;
     applyDate(year, doy);
   }
   datePrev.addEventListener('click', () => stepDate(-1));
@@ -842,35 +1011,50 @@
 
   // swatches (min & max of ramp)
   // $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
-  $('sw-l2').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+  const rampSwatch = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+  $('sw-l2').style.background = rampSwatch;
+  $('sw-l5').style.background = rampSwatch;
 
-  // colorbar gradient + ticks
-  (function buildColorbar(){
+  // colorbar gradient is fixed (same NEO ramp for both overlays); only the
+  // title/unit/ticks change with the active layer's domain.
+  (function paintColorbarGradient(){
     const stops = NEO_DIV_VEG.map(([f,hex]) => `${hex} ${(f*100).toFixed(1)}%`).join(', ');
     $('cb-bar').style.background = `linear-gradient(to top, ${stops})`;
-    const span = RMAX - RMIN, ticks = $('cb-ticks');
-    for (const t of CONFIG.rciTicks){
+  })();
+
+  function updateColorbar(key){
+    const info = RASTER_INFO[key] || RASTER_INFO.rci;
+    $('cb-title').textContent = info.name;
+    $('cb-unit').textContent  = info.unit;
+    const span = info.max - info.min, ticks = $('cb-ticks');
+    ticks.innerHTML = '';
+    for (const t of info.ticks){
       const el = document.createElement('div');
       el.className = 'cb-tick';
-      el.style.top = `${(1 - (t - RMIN)/span) * 100}%`;
+      el.style.top = `${(1 - (t - info.min)/span) * 100}%`;
       el.textContent = t.toFixed(1);
       ticks.appendChild(el);
     }
-  })();
+  }
+  updateColorbar(activeRaster() || 'rci');
 
   // cursor readout — raw band values via WebGLTile.getData()
   const roLon=$('ro-lon'), roLat=$('ro-lat'), roVal=$('ro-val'), roFd=$('ro-fd'),
         roSrc=$('ro-src'), roSrcTxt=$('ro-src-txt');
 
   function readAt(pixel){
-    // Read the SIF-RCI overlay's bands here: band 1 = RCI, band 2 = flash-drought mask.
-    if (l2Layer.getVisible()){
+    // Each overlay carries band 1 = value, band 2 = flash-drought mask.  Read the
+    // topmost visible overlay (SWDI over SIF-RCI) so the readout matches the map.
+    for (const key of ['swdi', 'rci']){
+      const info = RASTER_INFO[key];
+      if (!info.layer.getVisible()) continue;
       try {
-        const d = l2Layer.getData(pixel);          // [rci, fd]
+        const d = info.layer.getData(pixel);       // [value, fd, (alpha)]
         if (d && d.length){
           const a = d[0];
-          if (Number.isFinite(a))
-            return { v: a, fd: d[1], src: 'SIF-RCI (region)', rci: true };
+          if (Number.isFinite(a) && a > -1e6 && a < 1e6)
+            return { v: a, fd: d[1], src: info.name + ' (region)',
+                     label: info.name, decimals: info.decimals, signed: info.signed };
         }
       } catch(_){}
     }
@@ -888,14 +1072,16 @@
     if (!r){ roVal.innerHTML = '—'; resetFdReadout(); roSrc.classList.remove('live'); roSrcTxt.textContent = 'no raster here'; return; }
     roSrc.classList.add('live');
     roSrcTxt.textContent = r.src;
+    $('ro-val-k').textContent = r.label;
     if (r.nodata || r.v == null){ roVal.innerHTML = '<span style="color:var(--ink-dim)">nodata</span>'; resetFdReadout(); }
     else {
-      const txt = r.rci && r.v >= 0 ? '+' + r.v.toFixed(3) : r.v.toFixed(3);
-      roVal.innerHTML = txt;
-      // flash-drought detection at this cell (band 2: 1 = detected, 0 = none)
-      if (r.fd === 1){ roFd.textContent = 'Detected'; roFd.className = 'v mono fd-hit'; }
-      else if (Number.isFinite(r.fd)){ roFd.textContent = 'None'; roFd.className = 'v mono fd-miss'; }
-      else resetFdReadout();
+      const sign = r.signed && r.v >= 0 ? '+' : '';
+      roVal.innerHTML = sign + r.v.toFixed(r.decimals);
+      // flash-drought detection at this cell (band 2; ≥0.5 after reprojection = detected)
+      if (Number.isFinite(r.fd)){
+        if (r.fd >= 0.5){ roFd.textContent = 'Detected'; roFd.className = 'v mono fd-hit'; }
+        else            { roFd.textContent = 'None';     roFd.className = 'v mono fd-miss'; }
+      } else resetFdReadout();
     }
   });
   map.getViewport().addEventListener('mouseleave', () => {
