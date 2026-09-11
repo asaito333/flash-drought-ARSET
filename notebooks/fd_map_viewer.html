@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flash Drought Explorer</title>
+
+<!-- OpenLayers (full build: bundles geotiff.js, WebGLTile, WMTS) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openlayers/10.6.1/ol.min.css"
+      integrity="sha512-oVyisN6T8O7H9DnBc1w/IipxzLhNvJERKa0Rx9fKEtaodE7UXQAypIHamYzQPAqVxp0pVl25e4spVQWIVfu6eA=="
+      crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --panel:      #10191f;   /* instrument housing            */
+    --panel-2:    #17242d;   /* raised surface                */
+    --line:       #2a3d4a;   /* hairline / divider            */
+    --line-soft:  #21323d;
+    --ink:        #e2edf3;   /* primary text                  */
+    --ink-mute:   #86a0b0;   /* secondary text                */
+    --ink-dim:    #5c7484;   /* tertiary / captions           */
+    --accent:     #e0a54b;   /* single functional accent      */
+    --accent-dim: #7a5c2c;
+    --bad:        #e5765c;
+    --shadow:     0 8px 28px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.03) inset;
+    --r:          10px;
+  }
+
+  html,body{height:100%;margin:0;background:#000;}
+  #map{position:absolute;inset:0;background:#0a1116;}
+
+  /* OL canvas sits under our chrome */
+  .ol-viewport canvas{image-rendering:auto;}
+
+  body{
+    font-family:"IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior:none;
+  }
+
+  .mono{font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-variant-numeric:tabular-nums;}
+
+  /* ---- shared panel chrome ------------------------------------------- */
+  .sv-panel{
+    position:absolute;
+    background:linear-gradient(180deg, rgba(23,36,45,.94), rgba(16,25,31,.94));
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    box-shadow:var(--shadow);
+    backdrop-filter:blur(8px) saturate(1.1);
+    -webkit-backdrop-filter:blur(8px) saturate(1.1);
+    z-index:5;
+  }
+
+  /* ---- control panel (top-left) -------------------------------------- */
+  #controls{ top:14px; left:14px; width:268px; padding:14px 14px 12px; }
+
+  .sv-eyebrow{
+    font-size:10.5px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--ink-dim); font-weight:600; display:flex; align-items:center; gap:8px;
+  }
+  .sv-eyebrow::before{
+    content:""; width:6px; height:6px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 8px var(--accent);
+  }
+  #controls h1{
+    margin:6px 0 2px; font-size:17px; font-weight:700; letter-spacing:-.01em; line-height:1.15;
+  }
+  #controls .sub{ font-size:11.5px; color:var(--ink-mute); margin-bottom:12px; }
+  #controls .sub .mono{ color:var(--ink); }
+
+  .sv-divider{ height:1px; background:var(--line-soft); margin:10px -14px; }
+
+  /* layer rows */
+  .layer{ display:grid; grid-template-columns:auto 1fr auto; align-items:center;
+          gap:10px; padding:7px 0; }
+  .layer + .layer{ border-top:1px solid var(--line-soft); }
+  .layer .swatch{ width:14px; height:14px; border-radius:4px; border:1px solid rgba(255,255,255,.12); }
+  .layer .meta .name{ font-size:13px; font-weight:500; line-height:1.1; }
+  .layer .meta .desc{ font-size:10.5px; color:var(--ink-dim); margin-top:2px; line-height:1.25; }
+
+  /* toggle switch */
+  .toggle{ position:relative; width:38px; height:22px; flex:none; cursor:pointer; }
+  .toggle input{ position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+  .toggle .track{
+    position:absolute; inset:0; border-radius:999px;
+    background:#0e161c; border:1px solid var(--line);
+    transition:background .18s ease, border-color .18s ease;
+  }
+  .toggle .knob{
+    position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+    background:var(--ink-dim); transition:transform .18s ease, background .18s ease;
+  }
+  .toggle input:checked + .track{ background:rgba(224,165,75,.20); border-color:var(--accent-dim); }
+  .toggle input:checked + .track + .knob{ transform:translateX(16px); background:var(--accent); }
+  .toggle input:focus-visible + .track{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* opacity row */
+  .opacity{ display:flex; align-items:center; gap:10px; padding:9px 0 2px; }
+  .opacity label{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-dim); white-space:nowrap; }
+  .opacity output{ font-size:11px; color:var(--ink-mute); width:34px; text-align:right; }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; height:4px; border-radius:2px; flex:1;
+    background:linear-gradient(90deg, var(--accent) 0 var(--fill,100%), #0e161c var(--fill,100%) 100%);
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--ink); border:2px solid var(--accent); cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%; background:var(--ink);
+    border:2px solid var(--accent); cursor:pointer;
+  }
+  input[type=range]:focus-visible{ box-shadow:0 0 0 2px var(--panel), 0 0 0 4px var(--accent); border-radius:6px; }
+
+  .sv-btn{
+    appearance:none; width:100%; margin-top:11px; padding:8px 10px;
+    background:#0e161c; color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; font:inherit; font-size:12px; font-weight:500; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .sv-btn:hover{ border-color:var(--accent-dim); background:#121d24; }
+  .sv-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* ---- date stepper -------------------------------------------------- */
+  .datenav{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .datenav .dn-btn{
+    appearance:none; width:34px; height:34px; flex:none;
+    background:#0e161c; color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; font:inherit; font-size:17px; font-weight:600; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color .15s ease, background .15s ease, opacity .15s ease;
+  }
+  .datenav .dn-btn:hover:not(:disabled){ border-color:var(--accent-dim); background:#121d24; }
+  .datenav .dn-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .datenav .dn-btn:disabled{ opacity:.3; cursor:default; }
+  .datenav .dn-face{ flex:1; text-align:center; }
+  .datenav .dn-date{ font-size:16px; font-weight:600; letter-spacing:.01em; }
+  .datenav .dn-scene{ font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+                      color:var(--ink-dim); margin-top:2px; }
+
+  /* ---- scene-wide flash-drought coverage ----------------------------- */
+  .fd-stat{ display:flex; align-items:baseline; justify-content:space-between;
+            gap:10px; margin-top:10px; }
+  .fd-stat-label{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+                  color:var(--ink-dim); }
+  .fd-stat-val{ font-size:16px; font-weight:600; color:var(--accent); }
+
+  /* flash-drought detection state (cursor readout) */
+  .fd-hit{ color:var(--accent); font-weight:600; }
+  .fd-miss{ color:var(--ink-mute); }
+
+  /* ---- colorbar (bottom-right, above attribution) -------------------- */
+  #colorbar{ right:14px; bottom:64px; padding:12px 14px 10px; width:86px; }
+  #colorbar .cb-title{ font-size:11px; font-weight:600; letter-spacing:.02em; }
+  #colorbar .cb-unit{ font-size:9.5px; color:var(--ink-dim); margin-top:1px; margin-bottom:9px; }
+  .cb-body{ display:grid; grid-template-columns:16px 1fr; gap:9px; height:150px; }
+  .cb-bar{ width:16px; height:100%; border-radius:4px; border:1px solid rgba(255,255,255,.14); }
+  .cb-ticks{ position:relative; font-size:10.5px; color:var(--ink-mute); }
+  .cb-tick{ position:absolute; left:0; transform:translateY(-50%); display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .cb-tick::before{ content:""; width:6px; height:1px; background:var(--line); }
+
+  /* ---- readout console (top-right) ----------------------------------- */
+  #readout{ top:14px; right:14px; padding:11px 14px; min-width:186px; }
+  #readout .ro-head{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-dim); font-weight:600; margin-bottom:8px; }
+  .ro-row{ display:flex; justify-content:space-between; align-items:baseline; gap:14px; padding:3px 0; }
+  .ro-row .k{ font-size:11px; color:var(--ink-mute); }
+  .ro-row .v{ font-size:13px; color:var(--ink); }
+  .ro-row .v.big{ font-size:15px; font-weight:600; }
+  .ro-row .v .u{ font-size:9.5px; color:var(--ink-dim); margin-left:3px; }
+  .ro-src{ margin-top:7px; padding-top:7px; border-top:1px solid var(--line-soft);
+           font-size:9.5px; color:var(--ink-dim); display:flex; align-items:center; gap:6px; }
+  .ro-src .dot{ width:6px; height:6px; border-radius:50%; background:var(--ink-dim); }
+  .ro-src.live .dot{ background:var(--accent); box-shadow:0 0 7px var(--accent); }
+
+  /* ---- attribution / status ------------------------------------------ */
+  #attrib{
+    position:absolute; right:14px; bottom:14px; z-index:5;
+    font-size:10px; color:var(--ink-dim); text-align:right; line-height:1.5;
+    background:rgba(16,25,31,.72); padding:6px 9px; border-radius:7px;
+    border:1px solid var(--line-soft); backdrop-filter:blur(5px);
+  }
+  #attrib b{ color:var(--ink-mute); font-weight:600; }
+
+  #loading{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6;
+    display:flex; align-items:center; gap:11px; padding:11px 16px;
+    background:rgba(16,25,31,.92); border:1px solid var(--line); border-radius:999px;
+    box-shadow:var(--shadow); font-size:12.5px; color:var(--ink-mute);
+  }
+  .spinner{ width:15px; height:15px; border-radius:50%;
+    border:2px solid var(--line); border-top-color:var(--accent); animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  #errbox{
+    position:absolute; left:50%; top:18px; transform:translateX(-50%); z-index:7;
+    max-width:min(560px,90vw); display:none; gap:11px; align-items:flex-start;
+    padding:12px 14px; background:#241417; border:1px solid #5c2b2b; border-radius:10px;
+    box-shadow:var(--shadow);
+  }
+  #errbox .ic{ color:var(--bad); font-weight:700; font-size:16px; line-height:1.2; }
+  #errbox .tx{ font-size:12px; color:#f0d5cf; line-height:1.45; }
+  #errbox .tx b{ color:#fff; }
+  #errbox .tx code{ font-family:"IBM Plex Mono",monospace; background:rgba(0,0,0,.3);
+                    padding:1px 5px; border-radius:4px; color:#ffd9cf; }
+
+  /* OpenLayers default control restyle to match */
+  .ol-zoom{ top:auto; bottom:14px; left:14px; }
+  .ol-control button{
+    background:rgba(16,25,31,.9)!important; color:var(--ink)!important;
+    border:1px solid var(--line)!important; font-weight:500;
+  }
+  .ol-control button:hover{ background:#17242d!important; }
+  .ol-control button:focus-visible{ outline:2px solid var(--accent)!important; }
+  .ol-attribution{ display:none; } /* we roll our own */
+
+  @media (max-width:640px){
+    #controls{ width:calc(100% - 28px); }
+    #readout{ display:none; }
+    #colorbar{ display:none; }
+    .ol-zoom{ left:14px; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms!important; transition-duration:.001ms!important; }
+  }
+</style>
+</head>
+<body>
+  <div id="map" role="application" aria-label="SIF raster map"></div>
+
+  <!-- Control panel -->
+  <section id="controls" class="sv-panel" aria-label="Layer controls">
+    <!--div class="sv-eyebrow">GOSIF · Solar-Induced Fluorescence</div-->
+    <h1>Flash Drought Viewer</h1>
+    <div class="sub">SIF-RCI 8-day composite · <span id="sub-year">2017</span></div>
+
+    <div class="datenav">
+      <button class="dn-btn" id="date-prev" aria-label="Previous 8-day period" title="Previous 8-day period">‹</button>
+      <div class="dn-face">
+        <div class="dn-date mono" id="date-label">2017-05-17</div>
+        <div class="dn-scene mono">Day of year <span id="scene-label">185</span></div>
+      </div>
+      <button class="dn-btn" id="date-next" aria-label="Next 8-day period" title="Next 8-day period">›</button>
+    </div>
+
+    <div class="fd-stat" aria-live="polite">
+      <span class="fd-stat-label">Flash drought coverage</span>
+      <span class="fd-stat-val mono" id="fd-pct">—</span>
+    </div>
+    <div class="sv-divider"></div>
+
+    <!--div class="layer">
+      <span class="swatch" id="sw-l1"></span>
+      <div class="meta"><div class="name">GOSIF (global)</div><div class="desc">0.05° · scaled Int16 → W m⁻² sr⁻¹ μm⁻¹</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l1" checked aria-label="Toggle GOSIF global layer"><span class="track"></span><span class="knob"></span></label>
+    </div-->
+
+    <div class="layer">
+      <span class="swatch" id="sw-l2"></span>
+      <div class="meta"><div class="name">SIF-RCI (region)</div><div class="desc">Rapid Change Index · flash drought at full opacity</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l2" checked aria-label="Toggle regional SIF-RCI overlay"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="opacity">
+      <label for="op-l2">Opacity</label>
+      <input type="range" id="op-l2" min="0" max="100" value="100" aria-label="SIF-RCI layer opacity">
+      <output id="op-l2-out">100%</output>
+    </div>
+
+    <div class="layer">
+      <span class="swatch" id="sw-l3" style="background:linear-gradient(135deg,#3a6ea5,#7fae5a);"></span>
+      <div class="meta"><div class="name">Nadir BRDF-Adjusted Reflectance</div><div class="desc">Terra + Aqua MODIS NBAR</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l3" checked aria-label="Toggle MODIS basemap"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <div class="layer">
+      <span class="swatch" id="sw-l4" style="background:linear-gradient(135deg,#333,#ccc);"></span>
+      <div class="meta"><div class="name">Labels</div></div>
+      <label class="toggle"><input type="checkbox" id="tg-l4" checked aria-label="Toggle OSM labels"><span class="track"></span><span class="knob"></span></label>
+    </div>
+
+    <button class="sv-btn" id="btn-fit">⤢ Fit to study region</button>
+  </section>
+
+  <!-- Colorbar -->
+  <aside id="colorbar" class="sv-panel" aria-hidden="true">
+    <div class="cb-title">SIF-RCI</div>
+    <div class="cb-unit mono">unitless</div>
+    <div class="cb-body">
+      <div class="cb-bar" id="cb-bar"></div>
+      <div class="cb-ticks mono" id="cb-ticks"></div>
+    </div>
+  </aside>
+
+  <!-- Readout console -->
+  <aside id="readout" class="sv-panel" aria-live="polite">
+    <div class="ro-head">Cursor Readout</div>
+    <div class="ro-row"><span class="k">Lon</span><span class="v mono" id="ro-lon">—</span></div>
+    <div class="ro-row"><span class="k">Lat</span><span class="v mono" id="ro-lat">—</span></div>
+    <div class="ro-row"><span class="k">SIF-RCI</span><span class="v big mono" id="ro-val">—</span></div>
+    <div class="ro-row"><span class="k">Flash drought</span><span class="v mono" id="ro-fd">—</span></div>
+    <div class="ro-src" id="ro-src"><span class="dot"></span><span id="ro-src-txt">move cursor over map</span></div>
+  </aside>
+
+  <div id="attrib">
+    <b>Imagery</b> NASA/GSFC/EOSDIS, Terra/Aqua MODIS<br>
+    <b>SIF</b> GOSIF (Li &amp; Xiao)
+  </div>
+
+  <div id="loading"><span class="spinner"></span><span>Loading rasters…</span></div>
+
+  <div id="errbox" role="alert">
+    <span class="ic">!</span>
+    <div class="tx" id="err-text"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/openlayers/10.6.1/dist/ol.min.js"
+          integrity="sha512-NEUbbO7KI1OYn+IHcF70vm3ON0obczJz9PJFwxHkfPCsT14UqDD4roG7rF5WpwkXRTPvysFb6Wvw/Tjh5tfv8g=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/geotiff/dist-browser/geotiff.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+  /* ==================================================================== *
+   *  CONFIG  —  edit paths / date / value range here                     *
+   * ==================================================================== */
+  const CONFIG = {
+    // Layer 1 — SIF-RCI (Rapid Change Index).  One region-clipped, single-band
+    //   GeoTIFF per 8-day scene, loaded directly from
+    //   data/{regionName}_time_steps_{year}/sif_rci_{year}_{mm}_{dd}.tif.
+    //   Values are unitless; nodata is NaN (no scaling or sentinel masking).
+    year: 2017,
+    doy:  137,                                   // -> data/gosif/GOSIF_2017137.tif
+    l1Dir: 'data/gosif',
+    scaleL1: 0.0001,                             // stored Int16 -> W m^-2 sr^-1 um^-1
+    nodataL1: 32766,                             // values >= this are nodata (covers 32766 & 32767)
+
+    // Layer 2 — NASA GIBS basemap.  TIME tracks the displayed scene's date.
+    gibsLayer: 'MODIS_Combined_L3_Nadir-BRDF_Daily',
+    gibsUrl: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/wmts.cgi',
+    time: null,                                  // null -> derived from year/doy
+
+    // Layer 3 - Labels from MapTiler/OpenStreetMap API. This is reverse proxied through my
+    // personal site to avoid exposing my API key.
+    labelsUrl: 'https://www.jackiepi.xyz/tiles-4326/{z}/{x}/{y}.pbf',
+
+    // Color scale for Layer 1 (absolute SIF).
+    domain: { min: 0.0, max: 0.6 },              // W m^-2 sr^-1 um^-1
+    ticks: [0, 0.15, 0.30, 0.45, 0.60],
+
+    // Color scale for Layer 2 (SIF-RCI).  Symmetric about 0 so the diverging
+    // ramp's neutral midpoint lands on "no change".
+    rciDomain: { min: -3, max: 3 },              // unitless
+    rciTicks: [-3, -1.5, 0, 1.5, 3],
+
+    // Study region  [west, south, east, north]  (lon/lat)
+    region: [-111, 45, -106, 50],
+    regionName: 'nplains',
+  };
+
+  /* ------------------------------------------------------------------ *
+   *  URL query-param overrides.  Any of `year`, `doy`, `regionName`,   *
+   *  or `region` (comma-separated west,south,east,north) present in    *
+   *  the query string overrides the matching CONFIG default.  This     *
+   *  runs before any derived config below is computed.                 *
+   *    e.g. ?year=2012&doy=185&regionName=nplains&region=-111,45,-106,50
+   * ------------------------------------------------------------------ */
+  (function applyUrlParams(){
+    const p = new URLSearchParams(window.location.search);
+
+    const year = parseInt(p.get('year'), 10);
+    if (Number.isFinite(year)) CONFIG.year = year;
+
+    const doy = parseInt(p.get('doy'), 10);
+    if (Number.isFinite(doy)) CONFIG.doy = doy;
+
+    const regionName = p.get('regionName');
+    if (regionName) CONFIG.regionName = regionName;
+
+    const region = p.get('region');
+    if (region){
+      const parts = region.split(',').map(Number);
+      if (parts.length === 4 && parts.every(Number.isFinite)) CONFIG.region = parts;
+    }
+  })();
+
+  // NEO diverging vegetation ramp (fraction of domain -> hex).
+  const NEO_DIV_VEG = [
+    [0.0000,'#530000'],[0.0101,'#540000'],[0.0202,'#560000'],[0.0303,'#5a0000'],
+    [0.0404,'#5b0000'],[0.0505,'#5e0000'],[0.0606,'#610000'],[0.0707,'#620000'],
+    [0.0808,'#640000'],[0.0909,'#670000'],[0.1010,'#6b0000'],[0.1111,'#6d0000'],
+    [0.1212,'#710000'],[0.1313,'#740000'],[0.1414,'#770000'],[0.1515,'#7a0000'],
+    [0.1616,'#7d0000'],[0.1717,'#830301'],[0.1818,'#860c04'],[0.1919,'#8c1507'],
+    [0.2020,'#911e0b'],[0.2121,'#96270d'],[0.2222,'#9b3110'],[0.2323,'#9f3a13'],
+    [0.2424,'#a44317'],[0.2525,'#aa4d19'],[0.2626,'#b0571d'],[0.2727,'#b56020'],
+    [0.2828,'#bb6c24'],[0.2929,'#c07529'],[0.3030,'#c27a30'],[0.3131,'#c68139'],
+    [0.3232,'#c88743'],[0.3333,'#cb8e4c'],[0.3434,'#cf9454'],[0.3535,'#d19b5e'],
+    [0.3636,'#d5a267'],[0.3737,'#d8a970'],[0.3838,'#dbb079'],[0.3939,'#deb683'],
+    [0.4040,'#e1bd8d'],[0.4141,'#e4c495'],[0.4242,'#e7cb9f'],[0.4343,'#ebd1a8'],
+    [0.4444,'#eed8b1'],[0.4545,'#f1e1bd'],[0.4646,'#f4e6c5'],[0.4747,'#f7edce'],
+    [0.4848,'#fbf5d8'],[0.4949,'#fdfce2'],[0.5051,'#fbfde1'],[0.5152,'#f5fada'],
+    [0.5253,'#eff7d1'],[0.5354,'#e8f3c8'],[0.5455,'#e2f1bf'],[0.5556,'#dbedb6'],
+    [0.5657,'#d5eaae'],[0.5758,'#cde7a6'],[0.5859,'#c7e49e'],[0.5960,'#c1e194'],
+    [0.6061,'#bbde8c'],[0.6162,'#b5da83'],[0.6263,'#afd77b'],[0.6364,'#a8d573'],
+    [0.6465,'#a1d16b'],[0.6566,'#9bcd62'],[0.6667,'#96cb5b'],[0.6768,'#8fc852'],
+    [0.6869,'#89c54a'],[0.6970,'#84c243'],[0.7071,'#7ec03b'],[0.7172,'#73b935'],
+    [0.7273,'#69b432'],[0.7374,'#5fae2d'],[0.7475,'#56a92a'],[0.7576,'#4ca426'],
+    [0.7677,'#439f23'],[0.7778,'#3a9a1e'],[0.7879,'#31951a'],[0.7980,'#289018'],
+    [0.8081,'#1f8b13'],[0.8182,'#178610'],[0.8283,'#0e810d'],[0.8384,'#0c7d0c'],
+    [0.8485,'#0b790b'],[0.8586,'#0b750b'],[0.8687,'#0a720a'],[0.8788,'#0a6e0a'],
+    [0.8889,'#0a6b0a'],[0.8990,'#096709'],[0.9091,'#096409'],[0.9192,'#086108'],
+    [0.9293,'#085f08'],[0.9394,'#085b08'],[0.9495,'#075907'],[0.9596,'#075507'],
+    [0.9697,'#075307'],[0.9798,'#065106'],[0.9899,'#064f06'],[1.0000,'#064c06'],
+  ];
+
+  /* ------------------------------------------------------------------ */
+  const $ = (id) => document.getElementById(id);
+
+  function showError(html){
+    $('err-text').innerHTML = html;
+    $('errbox').style.display = 'flex';
+  }
+  function hideLoading(){ const l=$('loading'); if(l) l.style.display='none'; }
+
+  if (typeof ol === 'undefined') {
+    hideLoading();
+    showError('Could not load <b>OpenLayers</b> from the CDN. This viewer needs network access to '
+      + '<code>cdn.jsdelivr.net</code>. If the notebook host blocks it, download <code>ol.js</code> + '
+      + '<code>ol.css</code> and point the two tags at local copies.');
+    throw new Error('OpenLayers failed to load');
+  }
+
+  /* ---- derived config ---------------------------------------------- */
+  const pad3 = (n) => String(n).padStart(3, '0');
+
+  // GOSIF 8-day compositing grid for the year: DOY 1, 9, 17, … 361 (46 scenes).
+  const DOY_STEP = 8, MIN_DOY = 1, MAX_DOY = 361;
+
+  // One SIF-RCI GeoTIFF per scene, keyed on the scene's calendar date:
+  //   data/{regionName}_time_steps/sif_rci_{year}_{mm}_{dd}.tif
+  const rciUrlFor = (year, doy) => {
+    const [y, m, d] = doyToISO(year, doy).split('-');
+    return `data/${CONFIG.regionName}_time_steps/sif_rci_${y}_${m}_${d}.tif`;
+  };
+
+  // Flash-drought detection mask (1 = flash drought, 0 = none), on the SAME grid
+  // as the matching SIF-RCI raster:
+  //   data/{regionName}_fd/fd_sifrci_{year}_{mm}_{dd}.tif
+  const fdUrlFor = (year, doy) => {
+    const [y, m, d] = doyToISO(year, doy).split('-');
+    return `data/${CONFIG.regionName}_fd/fd_sifrci_${y}_${m}_${d}.tif`;
+  };
+
+  function doyToISO(year, doy){
+    const d = new Date(Date.UTC(year, 0, 1));
+    d.setUTCDate(d.getUTCDate() + (doy - 1));
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Mutable "currently displayed scene" state, driven by applyDate() below.
+  let currentYear = CONFIG.year;
+  let currentDoy  = CONFIG.doy;
+  const TIME     = CONFIG.time || doyToISO(CONFIG.year, currentDoy);  // initial basemap time
+
+  /* ---- color ramps -------------------------------------------------- */
+  // Build an interpolate expression that spreads NEO_DIV_VEG across [lo, hi].
+  function makeRamp(lo, hi){
+    const stops = [];
+    for (const [f, hex] of NEO_DIV_VEG) stops.push(lo + f * (hi - lo), hex);
+    return (valueExpr) => ['interpolate', ['linear'], valueExpr, ...stops];
+  }
+  const { min: DMIN, max: DMAX } = CONFIG.domain;
+  const ramp = makeRamp(DMIN, DMAX);                    // Layer 1: absolute SIF
+
+  const { min: RMIN, max: RMAX } = CONFIG.rciDomain;
+  const rciRamp = makeRamp(RMIN, RMAX);                 // Layer 2: SIF-RCI
+
+  /* ==================================================================== *
+   *  LAYER 1 — SIF-RCI (Rapid Change Index), flash-drought highlighted   *
+   *  Each 8-day scene is a region-clipped, single-band Float32 GeoTIFF   *
+   *  (band 1 = RCI, NaN nodata).  A second, grid-aligned GeoTIFF (the    *
+   *  flash-drought mask: 1 = detected, 0 = none) is loaded as band 2 and *
+   *  modulates per-pixel opacity: detected cells render at full opacity,  *
+   *  cells with no detection at 50%.                                      *
+   * ==================================================================== */
+  const rciVal = ['band', 1];
+  const fdVal  = ['band', 2];                                        // 1 = flash drought, 0 = none
+  const validL2 = ['all', ['>=', rciVal, -1e6], ['<=', rciVal, 1e6]]; // NaN fails → transparent
+  const fdAlpha = ['case', ['==', fdVal, 1], 1.0, 0.25];             // highlight detections
+  const l2Layer = new ol.layer.WebGLTile({
+    // Multiply the ramp color by white-with-fdAlpha to scale only the alpha
+    // channel (RGB * 1, alpha * fdAlpha), leaving the hue untouched.
+    style: {
+      color: ['case',
+        validL2, ['*', rciRamp(rciVal), ['color', 255, 255, 255, fdAlpha]],
+        [0, 0, 0, 0]],
+    },
+  });
+
+  // Point Layer 1 at the SIF-RCI raster (band 1) plus its flash-drought mask
+  // (band 2) for a given scene.  Resolves once the source is ready (or rejects
+  // on error) so the caller can drive the spinner.
+  function loadRci(year, doy){
+    const rciUrl = rciUrlFor(year, doy);
+    const fdUrl  = fdUrlFor(year, doy);
+    return new Promise((resolve, reject) => {
+      const l2Source = new ol.source.GeoTIFF({
+        sources: [
+          { url: rciUrl, bands: [1] },
+          { url: fdUrl,  bands: [1] },
+        ],
+        normalize: false,
+        interpolate: false,
+        convertToRGB: false,
+        projection: 'EPSG:4326',
+        wrapX: false,
+        transition: 0,
+      });
+      l2Source.on('change', () => {
+        const state = l2Source.getState();
+        if (state === 'ready'){
+          l2Layer.setSource(l2Source);
+          l2Layer.setVisible($('tg-l2').checked);        // honor the toggle's current state
+          resolve();
+        } else if (state === 'error'){
+          reject(new Error(`${rciUrl} / ${fdUrl}`));
+        }
+      });
+    });
+  }
+
+  // Footprint outline for the overlay patch (toggles with Layer 2).
+  const footprint = new ol.layer.Vector({
+    source: new ol.source.Vector({
+      features: [ new ol.Feature(ol.geom.Polygon.fromExtent(CONFIG.region)) ],
+    }),
+    style: new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: 'rgba(224,165,75,.9)', width: 1.25, lineDash: [4,3] }),
+    }),
+  });
+
+  /* ==================================================================== *
+   *  LAYER 2 — NASA GIBS WMTS basemap (EPSG:4326, 500m matrix set)       *
+   *  Tiled space: origin (-180, 90); level 0 = 2x1 512px tiles;          *
+   *  resolutions 0.5625 / 2^z deg/px for z = 0..7.                       *
+   * ==================================================================== */
+  const gibsRes = [], gibsIds = [];
+  for (let z = 0; z <= 7; z++) { gibsRes.push(0.5625 / Math.pow(2, z)); gibsIds.push(String(z)); }
+
+  const basemap = new ol.layer.Tile({
+    source: new ol.source.WMTS({
+      url: `${CONFIG.gibsUrl}?TIME=${TIME}`,
+      layer: CONFIG.gibsLayer,
+      matrixSet: '500m',
+      format: 'image/jpeg',
+      style: 'default',
+      projection: ol.proj.get('EPSG:4326'),
+      requestEncoding: 'KVP',
+      crossOrigin: 'anonymous',
+      wrapX: true,
+      tileGrid: new ol.tilegrid.WMTS({
+        origin: [-180, 90],
+        extent: [-180, -90, 180, 90],   // clamp requests to valid data extent
+        resolutions: gibsRes,
+        matrixIds: gibsIds,
+        tileSize: 512,
+      }),
+    }),
+  });
+  basemap.getSource().on('tileloaderror', () => {
+    $('ro-src-txt').textContent && null; // non-fatal; basemap tiles for a date may be missing
+  });
+
+  const labelStyleFunction = (feature) => {
+    const layer = feature.get('layer');
+
+    // Only show labels at appropriate zoom levels
+    const zoom = map.getView().getZoom();
+    if (!zoom) return undefined;
+
+    if (layer === 'boundary') {
+      // Handle state and country boundaries
+      if (feature.get('admin_level') === 4) {
+        if (zoom < 6) return undefined;
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: '#333',
+            width: 1.5,
+            lineDash: [4,3]
+          })
+        });
+      } else if (feature.get('admin_level') === 2) {
+        //if (zoom > 8) return undefined;
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: '#333',
+            width: 2,
+            lineDash: undefined
+          })
+        });
+      }
+    } else if (layer === 'waterway') {
+      // if (feature.get('class') !== 'primary') return undefined;
+      return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: '#111e4e',
+            width: 2.5,
+            lineDash: undefined
+          })
+        });
+    } else if (layer === 'place') {
+      const name = feature.get('name:en');
+      const class_ = feature.get('class');
+
+      // Adjust font size and visibility based on place type and zoom
+      let fontSize = '14px';
+      let minZoom = 0;
+
+      switch (class_) {
+        case 'country':
+          fontSize = '16px';
+          minZoom = 2;
+          maxZoom = 12;
+          break;
+        case 'state':
+          fontSize = '16px';
+          minZoom = 6;
+          maxZoom = 12;
+          break;
+        case 'province':
+          fontSize = '16px';
+          minZoom = 6;
+          maxZoom = 12;
+          break;
+        default:
+          minZoom = 6;
+          maxZoom = 13;
+      }
+
+      if (zoom < minZoom) return undefined;
+      if (zoom > maxZoom) return undefined;
+
+      return new ol.style.Style({
+        text: new ol.style.Text({
+          text: name,
+          font: `${fontSize} 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif`,
+          fill: new ol.style.Fill({
+            color: '#000000'
+          }),
+          stroke: new ol.style.Stroke({
+            color: '#ffffff',
+            width: 3
+          }),
+          textAlign: 'center',
+          textBaseline: 'middle',
+          padding: [3, 3, 3, 3],
+          offsetX: 0,
+          offsetY: 0,
+          placement: 'point',
+          overflow: true,
+          maxAngle: 45,
+          scale: 1.0,
+        })
+      });
+    } else {
+      return undefined;
+    }
+  };
+
+  const labels = new ol.layer.VectorTile({
+    declutter: true,
+    source: new ol.source.VectorTile({
+        format: new ol.format.MVT(),
+        url: CONFIG.labelsUrl,
+        projection: 'EPSG:4326',
+        maxZoom: 18,
+        tileGrid: new ol.tilegrid.createXYZ({
+          extent: [-180, -90, 180, 90],
+          tileSize: 512,
+          maxResolution: 180 / 512,
+          maxZoom: 13,
+        })
+    }),
+    style: labelStyleFunction
+});
+
+  /* ==================================================================== *
+   *  MAP                                                                  *
+   * ==================================================================== */
+  const map = new ol.Map({
+    target: 'map',
+    // layers: [basemap, l1Layer, l2Layer, footprint],
+    layers: [basemap, l2Layer, footprint, labels],
+    view: new ol.View({
+      projection: 'EPSG:4326',
+      center: [ (CONFIG.region[0]+CONFIG.region[2])/2, (CONFIG.region[1]+CONFIG.region[3])/2 ],
+      extent: [-180, -90, 180, 90],
+      resolution: 0.012,
+      minZoom: 0,
+      maxZoom: 12,
+      constrainResolution: false,
+    }),
+  });
+
+  function fitRegion(){
+    const size = map.getSize();
+    if (!size || !size[0]) { requestAnimationFrame(fitRegion); return; }
+    map.getView().fit(CONFIG.region, { size, padding: [24,24,24,24], maxZoom: 9, duration: 250 });
+  }
+  requestAnimationFrame(fitRegion);
+  $('btn-fit').addEventListener('click', fitRegion);
+
+  map.once('rendercomplete', hideLoading);
+  setTimeout(hideLoading, 8000); // safety: never leave the spinner stuck
+
+  /* ==================================================================== *
+   *  UI — toggles, opacity, colorbar, readout                            *
+   * ==================================================================== */
+  // toggles
+  // $('tg-l1').addEventListener('change', e => l1Layer.setVisible(e.target.checked));
+  $('tg-l2').addEventListener('change', e => { l2Layer.setVisible(e.target.checked); footprint.setVisible(e.target.checked); });
+  $('tg-l3').addEventListener('change', e => basemap.setVisible(e.target.checked));
+  $('tg-l4').addEventListener('change', e => labels.setVisible(e.target.checked));
+
+  // opacity (Layer 2)
+  const opIn = $('op-l2'), opOut = $('op-l2-out');
+  function syncOpacity(){
+    const v = +opIn.value;
+    l2Layer.setOpacity(v/100);
+    opOut.textContent = v + '%';
+    opIn.style.setProperty('--fill', v + '%');
+  }
+  opIn.addEventListener('input', syncOpacity);
+  syncOpacity();
+
+  /* ---- date stepper -------------------------------------------------- *
+   *  Moving between scenes swaps three things in lock-step: the GOSIF     *
+   *  raster (year+DOY), the climatology file (DOY only), and the GIBS     *
+   *  basemap's WMTS TIME dimension (full ISO date).                       */
+  const datePrev = $('date-prev'), dateNext = $('date-next');
+  let dateGen = 0;                       // guards against out-of-order async rebuilds
+
+  function refreshDateUI(){
+    const iso = doyToISO(currentYear, currentDoy);
+    $('date-label').textContent = iso;
+    $('scene-label').textContent = pad3(currentDoy);
+    $('sub-year').textContent = currentYear;
+    // Both directions roll over across the year boundary, so the stepper is never disabled.
+    return iso;
+  }
+
+  // Reflect the displayed scene in the URL (year/doy) so it can be shared /
+  // reloaded.  Existing params (region, regionName) are preserved.
+  function syncUrlParams(){
+    const p = new URLSearchParams(window.location.search);
+    p.set('year', currentYear);
+    p.set('doy',  currentDoy);
+    history.replaceState(null, '', `${window.location.pathname}?${p.toString()}${window.location.hash}`);
+  }
+
+  // Scene-wide flash-drought coverage: share of valid (non-NaN) mask pixels
+  // flagged as a detection.  Reads the mask GeoTIFF directly with geotiff.js
+  // (the browser HTTP cache dedupes this with the OL source's own fetch).
+  async function updateFdCoverage(year, doy, gen){
+    const pctEl = $('fd-pct');
+    pctEl.textContent = '…';
+    try {
+      const img = await (await GeoTIFF.fromUrl(fdUrlFor(year, doy))).getImage();
+      const [fd] = await img.readRasters();
+      let detected = 0, valid = 0;
+      for (let i = 0; i < fd.length; i++){
+        const v = fd[i];
+        if (!Number.isFinite(v)) continue;   // NaN = outside region / nodata
+        valid++;
+        if (v === 1) detected++;
+      }
+      if (gen !== dateGen) return;           // a newer scene superseded this one
+      pctEl.textContent = valid ? (detected / valid * 100).toFixed(1) + '%' : '—';
+    } catch(_){
+      if (gen === dateGen) pctEl.textContent = '—';
+    }
+  }
+
+  async function applyDate(year, doy){
+    doy = Math.max(MIN_DOY, Math.min(MAX_DOY, doy));
+    currentYear = year;
+    currentDoy  = doy;
+    syncUrlParams();
+    const gen = ++dateGen;
+    const iso = refreshDateUI();
+
+    // NASA GIBS basemap — swap the WMTS TIME dimension to match the scene.
+    const gibsSrc = basemap.getSource();
+    gibsSrc.setUrl(`${CONFIG.gibsUrl}?TIME=${iso}`);
+    gibsSrc.refresh();
+
+    // Recompute the scene-wide flash-drought coverage (independent of the overlay).
+    updateFdCoverage(year, doy, gen);
+
+    // Swap the SIF-RCI overlay to this scene's GeoTIFF.
+    const loading = $('loading');
+    if (loading) loading.style.display = 'flex';
+    try {
+      await loadRci(year, doy);
+      if (gen !== dateGen) return;       // a newer request superseded this one
+    } catch (err) {
+      if (gen === dateGen)
+        showError(`Couldn't load the SIF-RCI raster <code>${rciUrlFor(year, doy)}</code> `
+          + `or its flash-drought mask <code>${fdUrlFor(year, doy)}</code> `
+          + `(<code>${err && err.message ? err.message : err}</code>). `
+          + `The server must serve these files with HTTP byte-range support.`);
+    } finally {
+      if (gen === dateGen && loading) loading.style.display = 'none';
+    }
+  }
+
+  // Step one 8-day scene, rolling over the year boundary in either direction:
+  // past DOY 361 wraps to DOY 1 of the next year, and before DOY 1 wraps to
+  // DOY 361 of the previous year.
+  function stepDate(delta){
+    let year = currentYear;
+    let doy  = currentDoy + delta * DOY_STEP;
+    if (doy > MAX_DOY)      { year += 1; doy = MIN_DOY; }
+    else if (doy < MIN_DOY) { year -= 1; doy = MAX_DOY; }
+    applyDate(year, doy);
+  }
+  datePrev.addEventListener('click', () => stepDate(-1));
+  dateNext.addEventListener('click', () => stepDate(+1));
+  window.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea, button')) return;
+    if (e.key === 'ArrowLeft')       stepDate(-1);
+    else if (e.key === 'ArrowRight') stepDate(+1);
+  });
+
+  applyDate(currentYear, currentDoy);  // build the initial scene
+
+  // swatches (min & max of ramp)
+  // $('sw-l1').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+  $('sw-l2').style.background = `linear-gradient(135deg, ${NEO_DIV_VEG[0][1]}, ${NEO_DIV_VEG[NEO_DIV_VEG.length-1][1]})`;
+
+  // colorbar gradient + ticks
+  (function buildColorbar(){
+    const stops = NEO_DIV_VEG.map(([f,hex]) => `${hex} ${(f*100).toFixed(1)}%`).join(', ');
+    $('cb-bar').style.background = `linear-gradient(to top, ${stops})`;
+    const span = RMAX - RMIN, ticks = $('cb-ticks');
+    for (const t of CONFIG.rciTicks){
+      const el = document.createElement('div');
+      el.className = 'cb-tick';
+      el.style.top = `${(1 - (t - RMIN)/span) * 100}%`;
+      el.textContent = t.toFixed(1);
+      ticks.appendChild(el);
+    }
+  })();
+
+  // cursor readout — raw band values via WebGLTile.getData()
+  const roLon=$('ro-lon'), roLat=$('ro-lat'), roVal=$('ro-val'), roFd=$('ro-fd'),
+        roSrc=$('ro-src'), roSrcTxt=$('ro-src-txt');
+
+  function readAt(pixel){
+    // Read the SIF-RCI overlay's bands here: band 1 = RCI, band 2 = flash-drought mask.
+    if (l2Layer.getVisible()){
+      try {
+        const d = l2Layer.getData(pixel);          // [rci, fd]
+        if (d && d.length){
+          const a = d[0];
+          if (Number.isFinite(a))
+            return { v: a, fd: d[1], src: 'SIF-RCI (region)', rci: true };
+        }
+      } catch(_){}
+    }
+    return null;
+  }
+
+  function resetFdReadout(){ roFd.textContent = '—'; roFd.className = 'v mono'; }
+
+  map.on('pointermove', (evt) => {
+    if (evt.dragging) return;
+    const [lon, lat] = evt.coordinate;
+    roLon.textContent = lon.toFixed(4) + '°';
+    roLat.textContent = lat.toFixed(4) + '°';
+    const r = readAt(evt.pixel);
+    if (!r){ roVal.innerHTML = '—'; resetFdReadout(); roSrc.classList.remove('live'); roSrcTxt.textContent = 'no raster here'; return; }
+    roSrc.classList.add('live');
+    roSrcTxt.textContent = r.src;
+    if (r.nodata || r.v == null){ roVal.innerHTML = '<span style="color:var(--ink-dim)">nodata</span>'; resetFdReadout(); }
+    else {
+      const txt = r.rci && r.v >= 0 ? '+' + r.v.toFixed(3) : r.v.toFixed(3);
+      roVal.innerHTML = txt;
+      // flash-drought detection at this cell (band 2: 1 = detected, 0 = none)
+      if (r.fd === 1){ roFd.textContent = 'Detected'; roFd.className = 'v mono fd-hit'; }
+      else if (Number.isFinite(r.fd)){ roFd.textContent = 'None'; roFd.className = 'v mono fd-miss'; }
+      else resetFdReadout();
+    }
+  });
+  map.getViewport().addEventListener('mouseleave', () => {
+    roLon.textContent=roLat.textContent='—'; roVal.innerHTML='—'; resetFdReadout();
+    roSrc.classList.remove('live'); roSrcTxt.textContent='move cursor over map';
+  });
+  </script>
+</body>
+</html>

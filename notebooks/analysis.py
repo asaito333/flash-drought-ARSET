@@ -266,7 +266,16 @@ def detect_flash_drought_sif(
     # it can be merged into the CSV by row rather than relying on row order.
     fd_percent_by_date: dict[str, float] = {}
 
+    with open(time_series_csv, newline="") as f:
+        reader = csv.DictReader(f)
+        time_series_dates = [row["date"] for row in reader]
+
     for path in paths:
+        # Reconstruct the "%Y-%m-%d" date from "sif_rci_{year}_{month}_{day}".
+        year, month, day = os.path.splitext(os.path.basename(path))[0].split("_")[-3:]
+        if f"{year}-{month}-{day}" not in time_series_dates:
+            continue
+
         with rasterio.open(path) as src:
             rci_grid = src.read(1).astype("float64")
             crs = src.crs
@@ -286,8 +295,6 @@ def detect_flash_drought_sif(
         n_valid = int(np.count_nonzero(~np.isnan(rci_grid)))
         fd_percent = 100.0 * int(np.count_nonzero(detection)) / n_valid if n_valid else 0.0
 
-        # Reconstruct the "%Y-%m-%d" date from "sif_rci_{year}_{month}_{day}".
-        year, month, day = os.path.splitext(os.path.basename(path))[0].split("_")[-3:]
         fd_percent_by_date[f"{year}-{month}-{day}"] = fd_percent
 
         out_name = os.path.basename(path).replace("sif_rci_", "fd_sifrci_", 1)
@@ -358,7 +365,15 @@ def detect_flash_drought_swdi(
     persistent_detection: np.ndarray | None = None
     fd_percent_by_date: dict[str, float] = {}
 
+    with open(time_series_csv, newline="") as f:
+        reader = csv.DictReader(f)
+        time_series_dates = [row["time"] for row in reader]
+
     for path in paths:
+        year, month, day = os.path.splitext(os.path.basename(path))[0].split("_")[-3:]
+        if f"{year}-{month}-{day}" not in time_series_dates:
+            continue
+
         with rasterio.open(path) as src:
             swdi_grid = src.read(1).astype("float64")
             crs = src.crs
@@ -400,7 +415,6 @@ def detect_flash_drought_swdi(
         n_valid = int(np.count_nonzero(~np.isnan(swdi_grid)))
         fd_percent = 100.0 * int(np.count_nonzero(detection)) / n_valid if n_valid else 0.0
 
-        year, month, day = os.path.splitext(os.path.basename(path))[0].split("_")[-3:]
         fd_percent_by_date[f"{year}-{month}-{day}"] = fd_percent
 
         out_name = os.path.basename(path).replace("swdi_", "fd_swdi_", 1)
