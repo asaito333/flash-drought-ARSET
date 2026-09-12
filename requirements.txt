@@ -1,13 +1,14 @@
-cdsapi ~= 0.7.7
 dask[distributed] ~= 2026.7
 earthaccess[virtualizarr] ~= 0.18
 h5netcdf ~= 1.8
 ipykernel ~= 7.2
 jupyter ~= 1.1
 matplotlib ~= 3.10
+numpy ~= 2.0
 pandas ~= 3.0
+pyproj ~= 3.6
 rasterio ~= 1.5
 requests ~= 2.34
-rioxarray ~= 0.22
 tqdm ~= 4.67
+virtualizarr ~= 1.0
 xarray ~= 2026.4

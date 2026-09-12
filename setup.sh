@@ -1,5 +1,5 @@
 #!/bin/bash
-python -m venv flash-drought
+python3 -m venv flash-drought
 source flash-drought/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
