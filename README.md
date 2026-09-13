@@ -19,23 +19,30 @@ By the end of this course, you will learn how to:
 
 ## Installation
 
-1. **Download the course materials.** Click the green "Code" button at the top of this page, and select "Download ZIP" and unpack the zip wherever you like. Alternatively, you can clone this repository if you know how to do so.
+1. **Install Python or Anaconda.** If you do not already have one of these installed:
+   * **Python users:** Download Python 3.12 or later from [python.org](https://www.python.org/downloads/) and run the installer.
+   * **Anaconda users:** Download Anaconda from [anaconda.com](https://www.anaconda.com/download) and run the installer.
 
-2. **Set up your NASA Earthdata account.** If you do not already have an account, go to [Earthdata Login](https://urs.earthdata.nasa.gov/) and create one. Remember the username and password you used.
+2. **Download the course materials.** Click the green "Code" button at the top of this page, select "Download ZIP", and unpack the zip file wherever you like. Alternatively, you can clone this repository if you know how to do so.
 
-3. **Open Terminal (MacOS) or Powershell (Windows) and navigate to the `flash-drought-ARSET` directory where you unpacked the code.**
+3. **Set up your NASA Earthdata account.** If you do not already have an account, go to [Earthdata Login](https://urs.earthdata.nasa.gov/) and create one. Remember the username and password you used.
 
-4. **Run the setup script to install dependencies and open the Jupyter Notebook in a browser window.**
-* Anaconda users on Windows, run `.\setup-conda.ps1` in Powershell.
-* Python users on Windows, run `.\setup.ps1` in Powershell.
-* Anaconda users on MacOS/Linux, run `./setup-conda.sh` in Terminal.
-* Python users on MacOS/Linux, run `./setup.sh` in Terminal.
+4. **Open Terminal (MacOS) or PowerShell (Windows) and navigate to the `flash-drought-ARSET` directory where you unpacked the code.** For example, if you unpacked it in your Downloads folder, run:
+   * MacOS/Linux: `cd ~/Downloads/flash-drought-ARSET`
+   * Windows: `cd ~\Downloads\flash-drought-ARSET`
 
-If you would like to open the Jupyter Notebook on subsequent uses once your environment is set up, you can run the setup script again or run the following command in the `flash-drought-ARSET` directory:
+5. **Run the setup script to install dependencies and open the Jupyter Notebook in a browser window.**
+* Anaconda users on Windows, run `.\setup-conda.ps1` in PowerShell.
+* Python users on Windows, run `.\setup.ps1` in PowerShell.
+* Anaconda users on MacOS/Linux, run `bash setup-conda.sh` in Terminal.
+* Python users on MacOS/Linux, run `bash setup.sh` in Terminal.
 
-```bash
-jupyter lab notebooks/1_drought_indicators.ipynb
-```
+> **Windows users:** If you see an error saying that running scripts is disabled, run the following command in PowerShell first, then try running the setup script again:
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
+
+If you would like to open the Jupyter Notebook on subsequent uses once your environment is set up, simply run the setup script again.
 
 
 ## Common Questions

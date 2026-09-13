@@ -4,7 +4,6 @@ channels:
   - defaults
 dependencies:
   - python>=3.12
-  - cdsapi==0.7.7
   - dask
   - distributed
   - earthaccess
@@ -12,9 +11,11 @@ dependencies:
   - ipykernel
   - jupyter
   - matplotlib
+  - numpy
+  - pandas
+  - pyproj
   - rasterio
   - requests
-  - rioxarray
   - tqdm
   - virtualizarr
   - xarray
