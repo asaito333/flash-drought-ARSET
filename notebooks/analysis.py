@@ -97,7 +97,7 @@ def compute_rci(
     sign_change = (z_prev_grid * z_jy_grid) < 0   # Z(j-1,y)·Z(j,y) < 0  (case 3)
 
     neg_term = np.sqrt(np.where(neg_anom, np.abs(z_jy_grid) - 0.75, 0.0))
-    pos_term = np.sqrt(np.where(pos_anom, z_jy_grid + 0.75, 0.0))
+    pos_term = np.sqrt(np.where(pos_anom, z_jy_grid - 0.75, 0.0))
 
     rci_jy_grid = rci_prev_grid.copy()
     rci_jy_grid = np.where(neg_anom, rci_prev_grid - neg_term, rci_jy_grid)
