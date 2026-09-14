@@ -10,5 +10,4 @@ pyproj ~= 3.6
 rasterio ~= 1.5
 requests ~= 2.34
 tqdm ~= 4.67
-virtualizarr ~= 1.0
 xarray ~= 2026.4
