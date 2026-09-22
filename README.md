@@ -105,8 +105,10 @@ definitions, indicators, and where we go from here. Journal of Applied and Servi
 
 
 
-## Data Sources and Attributions
+## Acknowledgements
 
-**GOSIF Dataset:** Used with permission from the author.
+Special thanks to Xiaolan Xu from the SMAP team at JPL for her technical guidance and Rolf Reichle at NASA Goddard for his work in developing the SMAP Level 4 soil moisture dataset used in this course.
+
+**GOSIF Dataset:** Used with permission from the authors Xing Li and Jingfeng Xiao from the University of New Hampshire.
 
 **All Code:** Copyright 2026, by the California Institute of Technology. ALL RIGHTS RESERVED. United States Government Sponsorship acknowledged. Any commercial use must be negotiated with the Office of Technology Transfer at the California Institute of Technology.
